@@ -34,19 +34,19 @@ function sss_add_supplier_stock_fields_simple() {
     );
 
     // Threshold limit field
-    woocommerce_wp_text_input(
-        array(
-            'id'          => '_supplier_threshold',
-            'label'       => __( 'Supplier Threshold', 'supplier-stock-sync' ),
-            'desc_tip'    => true,
-            'description' => __( 'Minimum supplier quantity required to mark product as backorder. Leave blank for default (1).', 'supplier-stock-sync' ),
-            'type'        => 'number',
-            'custom_attributes' => array(
-                'min' => '0',
-                'step' => '1',
-            ),
-        )
-    );
+    // woocommerce_wp_text_input(
+    //     array(
+    //         'id'          => '_supplier_threshold',
+    //         'label'       => __( 'Supplier Threshold', 'supplier-stock-sync' ),
+    //         'desc_tip'    => true,
+    //         'description' => __( 'Minimum supplier quantity required to mark product as backorder. Leave blank for default (1).', 'supplier-stock-sync' ),
+    //         'type'        => 'number',
+    //         'custom_attributes' => array(
+    //             'min' => '0',
+    //             'step' => '1',
+    //         ),
+    //     )
+    // );
 
     echo '</div>';
 }
@@ -64,8 +64,8 @@ function sss_save_supplier_stock_meta( $product ) {
     $product->update_meta_data( '_supplier_sku', $supplier_sku );
 
     // Threshold
-    $threshold = isset( $_POST['_supplier_threshold'] ) ? intval( $_POST['_supplier_threshold'] ) : '';
-    $product->update_meta_data( '_supplier_threshold', $threshold );
+    // $threshold = isset( $_POST['_supplier_threshold'] ) ? intval( $_POST['_supplier_threshold'] ) : '';
+    // $product->update_meta_data( '_supplier_threshold', $threshold );
 
     $product->save_meta_data();
 }
@@ -95,18 +95,18 @@ function sss_variation_supplier_stock_field( $loop, $variation_data, $variation 
     ) );
 
     // Threshold
-    $threshold = get_post_meta( $variation->ID, '_supplier_threshold', true );
-    woocommerce_wp_text_input( array(
-        'id'            => "_supplier_threshold[{$variation->ID}]",
-        'label'         => __( 'Supplier Threshold', 'supplier-stock-sync' ),
-        'value'         => $threshold,
-        'type'          => 'number',
-        'custom_attributes' => array(
-            'min'  => '0',
-            'step' => '1',
-        ),
-        'wrapper_class' => 'form-row form-row-last',
-    ) );
+    // $threshold = get_post_meta( $variation->ID, '_supplier_threshold', true );
+    // woocommerce_wp_text_input( array(
+    //     'id'            => "_supplier_threshold[{$variation->ID}]",
+    //     'label'         => __( 'Supplier Threshold', 'supplier-stock-sync' ),
+    //     'value'         => $threshold,
+    //     'type'          => 'number',
+    //     'custom_attributes' => array(
+    //         'min'  => '0',
+    //         'step' => '1',
+    //     ),
+    //     'wrapper_class' => 'form-row form-row-last',
+    // ) );
 }
 
 /**
@@ -124,7 +124,7 @@ function sss_save_supplier_stock_variation_meta( $variation_id, $i ) {
     }
 
     // Threshold
-    if ( isset( $_POST['_supplier_threshold'][ $variation_id ] ) ) {
-        update_post_meta( $variation_id, '_supplier_threshold', intval( $_POST['_supplier_threshold'][ $variation_id ]) );
-    }
+    // if ( isset( $_POST['_supplier_threshold'][ $variation_id ] ) ) {
+    //     update_post_meta( $variation_id, '_supplier_threshold', intval( $_POST['_supplier_threshold'][ $variation_id ]) );
+    // }
 }
