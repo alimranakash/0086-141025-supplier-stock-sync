@@ -3,7 +3,7 @@
  * Plugin Name: Supplier Stock Sync
  * Plugin URI:  https://worzen.com/products/
  * Description: Sync product & variation stock with supplier CSV feed and auto-manage backorder / out-of-stock states. Uses Action Scheduler for background processing.
- * Version:     1.3.0
+ * Version:     1.3.3
  * Author:      Al Imran Akash
  * Author URI:  https://profiles.wordpress.org/al-imran-akash/
  * Text Domain: supplier-stock-sync
@@ -91,12 +91,15 @@ class Supplier_Stock_Sync {
      * Setup WordPress hooks
      */
     private function setup_hooks() {
+        // Replace WooCommerce default backorder availability text
+        add_filter( 'woocommerce_get_availability_text', array( $this, 'replace_backorder_availability_text' ), 10, 2 );
+
         // Checkout page backorder notice
         add_action( 'woocommerce_review_order_before_payment', array( $this, 'display_checkout_backorder_notice' ), 20 );
-        
+
         // Order email backorder notice
         add_action( 'woocommerce_email_order_details', array( $this, 'add_email_backorder_notice' ), 5, 4 );
-        
+
         // Add CSS for notices
         add_action( 'wp_head', array( $this, 'add_frontend_styles' ) );
     }
@@ -242,12 +245,37 @@ class Supplier_Stock_Sync {
     }
     
     /**
+     * Replace WooCommerce default backorder availability text with custom supplier message
+     *
+     * @param string $availability_text The default availability text
+     * @param WC_Product $product The product object
+     * @return string Modified availability text
+     */
+    public function replace_backorder_availability_text( $availability_text, $product ) {
+
+        if ( ! $product ) {
+            return $availability_text;
+        }
+
+        // Check if product is on backorder
+        if ( $product->is_on_backorder() || $product->get_stock_status() === 'onbackorder' ) {
+            // Only replace if this is the default "Available on backorder" text
+            if ( strpos( $availability_text, 'Available on back-order' ) !== false ||
+                 strpos( $availability_text, 'Available on back-order' ) !== false ) {
+                return $this->get_message( 'product' );
+            }
+        }
+
+        return $availability_text;
+    }
+
+    /**
      * Display checkout backorder notice
      */
     public function display_checkout_backorder_notice() {
         if ( $this->cart_has_backorder_items() ) {
-            echo '<div class="supplier-checkout-notice" style="background:#fff3cd;padding:15px;margin:15px 0;border:1px solid #ffeaa7;border-radius:4px;font-weight:bold;">';
-            echo '<span style="color:#856404;">ℹ️ ' . esc_html( $this->get_message( 'checkout' ) ) . '</span>';
+            echo '<div class="supplier-checkout-notice" style="background:#fff3cd;padding:15px;margin-bottom: 10px;border:1px solid #ffeaa7;border-radius:4px;font-weight:bold;">';
+            echo '<span style="color:#856404;">' . esc_html( $this->get_message( 'checkout' ) ) . '</span>';
             echo '</div>';
         }
     }
@@ -266,7 +294,7 @@ class Supplier_Stock_Sync {
             echo "\n" . $message . "\n\n";
         } else {
             echo '<div style="background:#fff3cd;padding:15px;margin:15px 0;border:1px solid #ffeaa7;border-radius:4px;">';
-            echo '<p style="margin:0;color:#856404;font-weight:bold;">ℹ️ ' . esc_html( $message ) . '</p>';
+            echo '<p style="margin:0;color:#856404;font-weight:bold;">' . esc_html( $message ) . '</p>';
             echo '</div>';
         }
     }
@@ -295,6 +323,13 @@ class Supplier_Stock_Sync {
             @keyframes fadeIn {
                 from { opacity: 0; }
                 to { opacity: 1; }
+            }
+            .e-checkout__order_review-2 .woo-checkout-payment-method-title {
+                bottom: -7rem;
+            }
+            .e-checkout__order_review-2 .elementor-widget-woocommerce-checkout-page .woocommerce .woocommerce-checkout #payment#payment {
+                padding-top: 4rem;
+                margin-top: 15px;
             }
             </style>';
         }
@@ -375,6 +410,7 @@ class Supplier_Stock_Sync {
                 <h3>Features:</h3>
                 <ul>
                     <li>✅ Automatic hourly stock synchronization</li>
+                    <li>✅ Automatic replacement of WooCommerce backorder text</li>
                     <li>✅ Product page backorder messages</li>
                     <li>✅ Checkout page backorder notices</li>
                     <li>✅ Order email backorder notifications</li>
@@ -389,8 +425,8 @@ class Supplier_Stock_Sync {
 
                 <h3>System Status:</h3>
                 <?php
-                $feed_data = SSS_Handler::get_supplier_feed_data();
-                $stats = SSS_Handler::get_feed_parsing_stats();
+                $feed_data  = SSS_Handler::get_supplier_feed_data();
+                $stats      = SSS_Handler::get_feed_parsing_stats();
 
                 // Get products with supplier stocking enabled
                 $args = array(
@@ -404,8 +440,8 @@ class Supplier_Stock_Sync {
                     ),
                     'fields'         => 'ids',
                 );
-                $supplier_products = get_posts( $args );
-                $next_cron = wp_next_scheduled( SSS_Cron::ACTION_HOOK );
+                $supplier_products  = get_posts( $args );
+                $next_cron          = wp_next_scheduled( SSS_Cron::ACTION_HOOK );
                 ?>
 
                 <table class="widefat">
@@ -500,15 +536,35 @@ class Supplier_Stock_Sync {
      */
     public function admin_messages_page() {
         // Handle form submission
-        if ( isset( $_POST['save_messages'] ) && wp_verify_nonce( $_POST['sss_messages_nonce'], 'sss_save_messages' ) ) {
+        if ( isset( $_POST['save_messages'] ) && check_admin_referer( 'sss_save_messages', 'sss_messages_nonce' ) ) {
+            // Sanitize and validate input
+            $product_msg = isset( $_POST['product_message'] ) ? sanitize_text_field( $_POST['product_message'] ) : '';
+            $checkout_msg = isset( $_POST['checkout_message'] ) ? sanitize_text_field( $_POST['checkout_message'] ) : '';
+            $email_msg = isset( $_POST['email_message'] ) ? sanitize_text_field( $_POST['email_message'] ) : '';
+
             $messages = array(
-                'product' => sanitize_text_field( $_POST['product_message'] ),
-                'checkout' => sanitize_text_field( $_POST['checkout_message'] ),
-                'email' => sanitize_text_field( $_POST['email_message'] )
+                'product' => $product_msg,
+                'checkout' => $checkout_msg,
+                'email' => $email_msg
             );
 
-            update_option( 'sss_backorder_messages', $messages );
-            echo '<div class="notice notice-success"><p>Messages saved successfully!</p></div>';
+            $result = update_option( 'sss_backorder_messages', $messages );
+
+            // Redirect to prevent form resubmission
+            $redirect_url = add_query_arg(
+                array(
+                    'page' => 'supplier-messages',
+                    'settings-updated' => 'true'
+                ),
+                admin_url( 'admin.php' )
+            );
+            wp_redirect( $redirect_url );
+            exit;
+        }
+
+        // Show success message after redirect
+        if ( isset( $_GET['settings-updated'] ) && $_GET['settings-updated'] === 'true' ) {
+            echo '<div class="notice notice-success is-dismissible"><p><strong>Messages saved successfully!</strong></p></div>';
         }
 
         $current_messages = get_option( 'sss_backorder_messages', array() );
@@ -535,8 +591,8 @@ class Supplier_Stock_Sync {
                             <input type="text" id="product_message" name="product_message"
                                    value="<?php echo esc_attr( isset( $current_messages['product'] ) ? $current_messages['product'] : $defaults['product'] ); ?>"
                                    class="regular-text" />
-                            <p class="description">Message shown on product detail pages when item is on backorder.</p>
-                            <p class="description"><strong>Shortcode:</strong> <code>[supplier_backorder_note]</code></p>
+                            <p class="description">Message automatically shown on product detail pages when item is on backorder (replaces WooCommerce's default "Available on backorder" text).</p>
+                            <p class="description"><strong>Shortcode:</strong> <code>[supplier_backorder_note]</code> (for manual placement)</p>
                         </td>
                     </tr>
 
@@ -575,11 +631,33 @@ class Supplier_Stock_Sync {
             <div style="background:#f0f0f0;padding:15px;margin-top:30px;border-radius:5px;">
                 <h3>Usage Instructions</h3>
                 <ul>
-                    <li><strong>Product Pages:</strong> Use shortcode <code>[supplier_backorder_note]</code> in product descriptions or use <code>[supplier_backorder_note text="Custom message"]</code> to override.</li>
+                    <li><strong>Product Pages:</strong> Message automatically replaces WooCommerce's default "Available on backorder" text. You can also use shortcode <code>[supplier_backorder_note]</code> for manual placement or <code>[supplier_backorder_note text="Custom message"]</code> to override.</li>
                     <li><strong>Checkout Page:</strong> Message displays automatically when cart has backordered items. You can also use <code>[supplier_checkout_note]</code> shortcode.</li>
                     <li><strong>Order Emails:</strong> Message is automatically added to all order confirmation emails when the order contains backordered products.</li>
                 </ul>
             </div>
+
+            <?php if ( isset( $_GET['debug'] ) && $_GET['debug'] === '1' ): ?>
+            <div style="background:#fff3cd;padding:15px;margin-top:30px;border-radius:5px;border:1px solid #ffeaa7;">
+                <h3>🔍 Debug Information</h3>
+                <p><strong>Current saved messages in database:</strong></p>
+                <pre style="background:#fff;padding:10px;border:1px solid #ddd;overflow:auto;"><?php
+                    $debug_messages = get_option( 'sss_backorder_messages', 'NOT SET' );
+                    print_r( $debug_messages );
+                ?></pre>
+
+                <p><strong>Messages returned by get_message() method:</strong></p>
+                <ul>
+                    <li><strong>Product:</strong> <?php echo esc_html( $this->get_message( 'product' ) ); ?></li>
+                    <li><strong>Checkout:</strong> <?php echo esc_html( $this->get_message( 'checkout' ) ); ?></li>
+                    <li><strong>Email:</strong> <?php echo esc_html( $this->get_message( 'email' ) ); ?></li>
+                </ul>
+
+                <p><a href="<?php echo remove_query_arg( 'debug' ); ?>">Hide Debug Info</a></p>
+            </div>
+            <?php else: ?>
+            <p style="margin-top:20px;"><a href="<?php echo add_query_arg( 'debug', '1' ); ?>">Show Debug Information</a></p>
+            <?php endif; ?>
         </div>
         <?php
     }
