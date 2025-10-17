@@ -179,59 +179,58 @@ class SSS_Handler {
             return;
         }
 
-        $sku = $product->get_sku();
+        // ✅ Get supplier SKU (if set), otherwise fallback to our SKU
+        $supplier_sku = $product->get_meta( '_supplier_sku', true );
+        $sku = !empty($supplier_sku) ? $supplier_sku : $product->get_sku();
         if ( empty( $sku ) ) {
             return;
         }
 
         $feed = self::get_supplier_feed_data();
-        echo '<pre>'; print_r($feed); echo '</pre>';
         if ( empty( $feed ) ) {
             return;
         }
 
-        // Normalize sku matching: exact match. If you need case-insensitive, use strtolower keys on both sides.
-        if ( ! isset( $feed[ $sku ] ) ) {
-            // try case-insensitive match
+        // ✅ Match SKU (case-insensitive)
+        $supplier_qty = 0;
+        if ( isset( $feed[ $sku ] ) ) {
+            $supplier_qty = intval( $feed[ $sku ] );
+        } else {
             $lower_feed = array_change_key_case( $feed, CASE_LOWER );
-            $lower_sku  = strtolower( $sku );
+            $lower_sku = strtolower( $sku );
             if ( isset( $lower_feed[ $lower_sku ] ) ) {
                 $supplier_qty = intval( $lower_feed[ $lower_sku ] );
-            } else {
-                return;
             }
-        } else {
-            $supplier_qty = intval( $feed[ $sku ] );
         }
 
         $current_stock = (int) $product->get_stock_quantity();
         $current_status = $product->get_stock_status();
 
-        // If store has stock and was on backorder, set to in stock and stop checking by requirement
+        // ✅ Get threshold limit (default 1 if not set)
+        $threshold = get_option( 'sss_threshold_limit', 1 );
+
+        // If our store has stock, ensure product is in stock
         if ( $current_stock > 0 && $current_status === 'onbackorder' ) {
             $product->set_stock_status( 'instock' );
             $product->save();
             return;
         }
 
-        // Only consult supplier when our stock is 0 (per requirements)
+        // Only check supplier when local stock = 0
         if ( $current_stock <= 0 ) {
-            if ( $supplier_qty > 0 ) {
-                // mark backorder
+            if ( $supplier_qty >= $threshold ) {
+                // Supplier meets threshold → mark as backorder
                 $product->set_stock_status( 'onbackorder' );
-                // ensure backorders allowed so customers can purchase
                 if ( method_exists( $product, 'set_backorders' ) ) {
-                    // 'notify' allows backorders and notifies customer — change to 'yes' if you want silent
                     $product->set_backorders( 'notify' );
                 }
-                $product->save();
             } else {
-                // supplier shows 0 => out of stock
                 $product->set_stock_status( 'outofstock' );
-                $product->save();
             }
+            $product->save();
         }
     }
+
 
     /**
      * Bulk update helper for arrays of IDs

@@ -189,6 +189,16 @@ class Supplier_Stock_Sync {
             'supplier-messages',
             array( $this, 'admin_messages_page' )
         );
+
+        add_submenu_page(
+            'supplier-stock-sync',
+            'Settings',
+            'Settings',
+            'manage_woocommerce',
+            'supplier-settings',
+            array( $this, 'admin_settings_page' )
+        );
+
     }
     
     /**
@@ -661,6 +671,65 @@ class Supplier_Stock_Sync {
         </div>
         <?php
     }
+
+    /**
+     * Admin Settings Page — for Threshold Limit
+     */
+    public function admin_settings_page() {
+        // Handle form submission
+        if ( isset( $_POST['save_threshold'] ) && check_admin_referer( 'sss_save_threshold', 'sss_threshold_nonce' ) ) {
+            $threshold = isset( $_POST['sss_threshold_limit'] ) ? absint( $_POST['sss_threshold_limit'] ) : 1;
+            update_option( 'sss_threshold_limit', $threshold );
+
+            // Redirect to avoid resubmission
+            $redirect_url = add_query_arg(
+                array(
+                    'page' => 'supplier-settings',
+                    'settings-updated' => 'true'
+                ),
+                admin_url( 'admin.php' )
+            );
+            wp_redirect( $redirect_url );
+            exit;
+        }
+
+        // Show success message
+        if ( isset( $_GET['settings-updated'] ) && $_GET['settings-updated'] === 'true' ) {
+            echo '<div class="notice notice-success is-dismissible"><p><strong>Threshold limit saved successfully!</strong></p></div>';
+        }
+
+        // Get saved value or default 1
+        $current_threshold = get_option( 'sss_threshold_limit', 1 );
+        ?>
+        <div class="wrap">
+            <h1>Supplier Settings</h1>
+            <p>Set the global threshold limit used to determine when a product should show as backorder.</p>
+
+            <form method="post" action="">
+                <?php wp_nonce_field( 'sss_save_threshold', 'sss_threshold_nonce' ); ?>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="sss_threshold_limit">Threshold Limit</label></th>
+                        <td>
+                            <input type="number" id="sss_threshold_limit" name="sss_threshold_limit"
+                                   value="<?php echo esc_attr( $current_threshold ); ?>" min="1"
+                                   class="small-text" />
+                            <p class="description">
+                                Example: If set to <strong>2</strong>, there must be at least 2 items in supplier feed for product to show as <em>Backorder</em>.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+
+                <p class="submit">
+                    <input type="submit" name="save_threshold" class="button-primary" value="Save Settings" />
+                </p>
+            </form>
+        </div>
+        <?php
+    }
+
 }
 
 /**
