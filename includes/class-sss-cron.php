@@ -70,7 +70,7 @@ class SSS_Cron {
         }
 
         // Pre-warm feed transient
-        SSS_Handler::get_supplier_feed_data();
+        SSS_Handler::get_supplier_feed_data(true);
 
         // Process in chunks to avoid timeouts on very large catalogs
         $chunks = array_chunk( $items, 100 );

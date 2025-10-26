@@ -3,7 +3,7 @@
  * Plugin Name: Supplier Stock Sync
  * Plugin URI:  https://worzen.com/products/
  * Description: Sync product & variation stock with supplier CSV feed and auto-manage backorder / out-of-stock states. Uses Action Scheduler for background processing.
- * Version:     1.3.3
+ * Version:     1.4.0
  * Author:      Al Imran Akash
  * Author URI:  https://profiles.wordpress.org/al-imran-akash/
  * Text Domain: supplier-stock-sync
@@ -67,6 +67,8 @@ class Supplier_Stock_Sync {
      */
     private function __construct() {
         add_action( 'plugins_loaded', array( $this, 'init' ) );
+        // add_action( 'init', array( $this, 'wc_init' ) );
+        // add_action( 'woocommerce_init', array( $this, 'wc_init' ) );
         register_activation_hook( __FILE__, array( $this, 'activate' ) );
         register_deactivation_hook( __FILE__, array( $this, 'deactivate' ) );
     }
@@ -85,6 +87,29 @@ class Supplier_Stock_Sync {
         $this->setup_admin();
         $this->setup_shortcodes();
         $this->setup_cron();
+    }
+
+    public function wc_init() {
+
+        // $args = array(
+        //     'post_type'      => array( 'product', 'product_variation' ),
+        //     'posts_per_page' => -1,
+        //     'meta_query'     => array(
+        //         array(
+        //             'key'   => '_supplier_stocked',
+        //             'value' => 'yes',
+        //         ),
+        //     ),
+        //     'fields'         => 'ids',
+        // );
+
+        // $items = get_posts( $args );
+        // if ( ! empty( $items ) ) {
+        //     SSS_Handler::update_product_from_feed( $items );
+        // }
+        
+        // $feed_data  = SSS_Handler::get_supplier_feed_data();
+        // print_r($feed_data);
     }
     
     /**
@@ -275,6 +300,14 @@ class Supplier_Stock_Sync {
                 return $this->get_message( 'product' );
             }
         }
+
+        // if ( $product->is_on_backorder() || $product->get_stock_status() === 'onbackorder' ) {
+        //     // Only replace if this is the default "Available on backorder" text
+        //     if ( strpos( $availability_text, 'Available on backorder' ) !== false ||
+        //          strpos( $availability_text, 'Available on backorder' ) !== false ) {
+        //         return $this->get_message( 'product' );
+        //     }
+        // }
 
         return $availability_text;
     }
@@ -496,15 +529,16 @@ class Supplier_Stock_Sync {
 
         if ( isset($_POST['run_supplier_check']) ) {
             // Run the actual sync
+            // SSS_Handler::clear_feed_cache();
             SSS_Cron::run();
             echo '<div style="background:#d7ffd9;padding:10px;margin-top:15px;border:1px solid #70d47b;">✅ Feed Sync Completed Successfully!</div>';
         }
 
         if ( isset($_POST['view_feed']) ) {
-            $start_time = microtime(true);
-            $feed = SSS_Handler::get_supplier_feed_data();
-            $end_time = microtime(true);
-            $parsing_time = round(($end_time - $start_time) * 1000, 2);
+            $start_time     = microtime(true);
+            $feed           = SSS_Handler::get_supplier_feed_data();
+            $end_time       = microtime(true);
+            $parsing_time   = round(($end_time - $start_time) * 1000, 2);
 
             echo '<h3>Feed Preview (Parsed in ' . $parsing_time . 'ms):</h3>';
             echo '<p><strong>Total entries:</strong> ' . count($feed) . '</p>';

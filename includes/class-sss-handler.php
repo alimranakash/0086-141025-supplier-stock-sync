@@ -21,10 +21,12 @@ class SSS_Handler {
      *
      * @return array
      */
-    public static function get_supplier_feed_data() {
-        $cached = get_transient( SSS_FEED_TRANSIENT );
-        if ( is_array( $cached ) ) {
-            return $cached;
+    public static function get_supplier_feed_data( $force_refresh = false ) {
+        if ( ! $force_refresh ) {
+            $cached = get_transient( SSS_FEED_TRANSIENT );
+            if ( is_array( $cached ) ) {
+                return $cached;
+            }
         }
 
         $url = defined( 'SSS_FEED_URL' ) ? SSS_FEED_URL : '';
@@ -168,68 +170,108 @@ class SSS_Handler {
             return;
         }
 
-        $product = is_object( $product_or_id ) ? $product_or_id : wc_get_product( $product_or_id );
-        if ( ! $product ) {
-            return;
-        }
+        // foreach ( $ids as $product_or_id ) {
+            $product = is_object( $product_or_id ) ? $product_or_id : wc_get_product( $product_or_id );
 
-        // Only process items that have supplier stocking enabled
-        $meta = $product->get_meta( '_supplier_stocked', true );
-        if ( $meta !== 'yes' ) {
-            return;
-        }
+            update_option('ttttttttttttttttt', $product);
 
-        // ✅ Get supplier SKU (if set), otherwise fallback to our SKU
-        $supplier_sku = $product->get_meta( '_supplier_sku', true );
-        $sku = !empty($supplier_sku) ? $supplier_sku : $product->get_sku();
-        if ( empty( $sku ) ) {
-            return;
-        }
-
-        $feed = self::get_supplier_feed_data();
-        if ( empty( $feed ) ) {
-            return;
-        }
-
-        // ✅ Match SKU (case-insensitive)
-        $supplier_qty = 0;
-        if ( isset( $feed[ $sku ] ) ) {
-            $supplier_qty = intval( $feed[ $sku ] );
-        } else {
-            $lower_feed = array_change_key_case( $feed, CASE_LOWER );
-            $lower_sku = strtolower( $sku );
-            if ( isset( $lower_feed[ $lower_sku ] ) ) {
-                $supplier_qty = intval( $lower_feed[ $lower_sku ] );
+            if ( ! $product ) {
+                return; // skip invalid product
             }
-        }
 
-        $current_stock = (int) $product->get_stock_quantity();
-        $current_status = $product->get_stock_status();
+            // Only process items that have supplier stocking enabled
+            $meta = $product->get_meta( '_supplier_stocked', true );
+            if ( $meta !== 'yes' ) {
+                return;
+            }
 
-        // ✅ Get threshold limit (default 1 if not set)
-        $threshold = get_option( 'sss_threshold_limit', 1 );
+            // Get supplier SKU (if set), otherwise fallback to our SKU
+            $supplier_sku = $product->get_meta( '_supplier_sku', true );
+            $sku = !empty($supplier_sku) ? $supplier_sku : $product->get_sku();
+            if ( empty( $sku ) ) {
+                return;
+            }
 
-        // If our store has stock, ensure product is in stock
-        if ( $current_stock > 0 && $current_status === 'onbackorder' ) {
-            $product->set_stock_status( 'instock' );
-            $product->save();
-            return;
-        }
+            // Get supplier feed
+            $feed = self::get_supplier_feed_data();
+            if ( empty( $feed ) ) {
+                return;
+            }
 
-        // Only check supplier when local stock = 0
-        if ( $current_stock <= 0 ) {
+            // Match SKU (case-insensitive)
+            $supplier_qty = 0;
+            if ( isset( $feed[ $sku ] ) ) {
+                $supplier_qty = intval( $feed[ $sku ] );
+            } else {
+                $lower_feed = array_change_key_case( $feed, CASE_LOWER );
+                $lower_sku = strtolower( $sku );
+                if ( isset( $lower_feed[ $lower_sku ] ) ) {
+                    $supplier_qty = intval( $lower_feed[ $lower_sku ] );
+                }
+            }
+
+            // ✅ Get threshold limit (default 1)
+            $threshold = get_option( 'sss_threshold_limit', 1 );
+
+            // ✅ Ensure stock management is enabled
+            if ( ! $product->get_manage_stock() ) {
+                $product->set_manage_stock( true );
+            }
+
+            // ✅ Check supplier quantity and update status only
             if ( $supplier_qty >= $threshold ) {
-                // Supplier meets threshold → mark as backorder
+                // Supplier has enough stock → allow backorder
                 $product->set_stock_status( 'onbackorder' );
+
                 if ( method_exists( $product, 'set_backorders' ) ) {
                     $product->set_backorders( 'notify' );
                 }
+
             } else {
+                // Supplier stock below threshold → mark out of stock
                 $product->set_stock_status( 'outofstock' );
+
+                if ( method_exists( $product, 'set_backorders' ) ) {
+                    $product->set_backorders( 'no' );
+                }
             }
+
+            $current_stock  = (int) $product->get_stock_quantity();
+            $current_status = $product->get_stock_status();
+
+            if ( $current_stock > 0 && $current_status === 'onbackorder' ) {
+                $product->set_stock_status( 'instock' );
+                if ( method_exists( $product, 'set_backorders' ) ) {
+                    $product->set_backorders( 'no' );
+                }
+            }
+
+            // ✅ Save product changes
             $product->save();
-        }
+
+
+            // // If variation, update parent stock status
+            // if ( $product->is_type('variation') ) {
+            //     $parent_id = $product->get_parent_id();
+            //     if ( $parent_id ) {
+            //         $parent = wc_get_product( $parent_id );
+            //         if ( $parent ) {
+            //             $parent_stock_status = $parent->get_children() ? 'outofstock' : $parent->get_stock_status();
+            //             foreach ( $parent->get_children() as $child_id ) {
+            //                 $child = wc_get_product( $child_id );
+            //                 if ( $child && $child->is_in_stock() ) {
+            //                     $parent_stock_status = 'instock';
+            //                     break;
+            //                 }
+            //             }
+            //             $parent->set_stock_status( $parent_stock_status );
+            //             $parent->save();
+            //         }
+            //     }
+            // }
+        // }
     }
+
 
 
     /**
@@ -252,5 +294,4 @@ class SSS_Handler {
         $instance = new self();
         return $instance->get_supplier_feed_data();
     }
-
 }
