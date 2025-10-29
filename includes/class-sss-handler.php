@@ -170,107 +170,129 @@ class SSS_Handler {
             return;
         }
 
-        // foreach ( $ids as $product_or_id ) {
-            $product = is_object( $product_or_id ) ? $product_or_id : wc_get_product( $product_or_id );
+        $product = is_object( $product_or_id ) ? $product_or_id : wc_get_product( $product_or_id );
+        if ( ! $product ) {
+            return; // skip invalid product
+        }
 
-            update_option('ttttttttttttttttt', $product);
+        // ✅ Only process items that have supplier stocking enabled
+        $meta = $product->get_meta( '_supplier_stocked', true );
+        if ( $meta !== 'yes' ) {
+            return;
+        }
 
-            if ( ! $product ) {
-                return; // skip invalid product
-            }
 
-            // Only process items that have supplier stocking enabled
-            $meta = $product->get_meta( '_supplier_stocked', true );
-            if ( $meta !== 'yes' ) {
-                return;
-            }
+        // ✅ Check for supplier SKU first, fallback to product SKU
+        $supplier_sku = trim( $product->get_meta( '_supplier_sku', true ) );
 
-            // Get supplier SKU (if set), otherwise fallback to our SKU
-            $supplier_sku = $product->get_meta( '_supplier_sku', true );
-            $sku = !empty($supplier_sku) ? $supplier_sku : $product->get_sku();
-            if ( empty( $sku ) ) {
-                return;
-            }
+        if ( ! empty( $supplier_sku ) ) {
+            $sku = $supplier_sku;
+        } 
+        else {
+            // fallback to product SKU and normalize it
+            $sku = trim( $product->get_sku() );
 
-            // Get supplier feed
-            $feed = self::get_supplier_feed_data();
-            if ( empty( $feed ) ) {
-                return;
-            }
+            if ( $sku !== '' && strpos( $sku, '/' ) !== false ) {
+                // split by slashes and merge, removing duplicated prefix pieces
+                $parts = explode( '/', $sku );
+                $result = array_shift( $parts ); // first chunk (keep as base)
 
-            // Match SKU (case-insensitive)
-            $supplier_qty = 0;
-            if ( isset( $feed[ $sku ] ) ) {
-                $supplier_qty = intval( $feed[ $sku ] );
-            } else {
-                $lower_feed = array_change_key_case( $feed, CASE_LOWER );
-                $lower_sku = strtolower( $sku );
-                if ( isset( $lower_feed[ $lower_sku ] ) ) {
-                    $supplier_qty = intval( $lower_feed[ $lower_sku ] );
-                }
-            }
+                foreach ( $parts as $p ) {
+                    // get last token of current result (based on dash)
+                    $tmp = explode( '-', $result );
+                    $last = end( $tmp );
+                    if ( $last === false ) {
+                        $last = '';
+                    }
 
-            // ✅ Get threshold limit (default 1)
-            $threshold = get_option( 'sss_threshold_limit', 1 );
+                    // case-insensitive compare: if current part starts with the same token as $last
+                    $last_up = mb_strtoupper( $last );
+                    $p_up = mb_strtoupper( $p );
 
-            // ✅ Ensure stock management is enabled
-            if ( ! $product->get_manage_stock() ) {
-                $product->set_manage_stock( true );
-            }
+                    if ( $last !== '' && substr( $p_up, 0, strlen( $last_up ) ) === $last_up ) {
+                        // remove the duplicate prefix (and an optional following dash)
+                        $p = preg_replace( '/^' . preg_quote( $last, '/' ) . '-?/i', '', $p );
+                    }
 
-            // ✅ Check supplier quantity and update status only
-            if ( $supplier_qty >= $threshold ) {
-                // Supplier has enough stock → allow backorder
-                $product->set_stock_status( 'onbackorder' );
+                    // if after removal the part is empty (rare), skip adding
+                    $p = trim( $p, "- \t\n\r\0\x0B" );
+                    if ( $p === '' ) {
+                        continue;
+                    }
 
-                if ( method_exists( $product, 'set_backorders' ) ) {
-                    $product->set_backorders( 'notify' );
+                    // append with single dash
+                    $result .= '-' . $p;
                 }
 
-            } else {
-                // Supplier stock below threshold → mark out of stock
-                $product->set_stock_status( 'outofstock' );
-
-                if ( method_exists( $product, 'set_backorders' ) ) {
-                    $product->set_backorders( 'no' );
-                }
+                // final normalized sku
+                $sku = $result;
             }
 
-            $current_stock  = (int) $product->get_stock_quantity();
-            $current_status = $product->get_stock_status();
+            // final cleanup: remove accidental double-dashes
+            $sku = preg_replace('/-+/', '-', $sku);
+            $sku = trim( $sku, '- ' );
+        }
 
-            if ( $current_stock > 0 && $current_status === 'onbackorder' ) {
-                $product->set_stock_status( 'instock' );
-                if ( method_exists( $product, 'set_backorders' ) ) {
-                    $product->set_backorders( 'no' );
-                }
+        if ( empty( $sku ) ) {
+            return;
+        }
+
+        // ✅ Get supplier feed
+        $feed = self::get_supplier_feed_data();
+        if ( empty( $feed ) ) {
+            return;
+        }
+
+        // ✅ Match SKU (case-insensitive)
+        $supplier_qty = 0;
+        if ( isset( $feed[ $sku ] ) ) {
+            $supplier_qty = intval( $feed[ $sku ] );
+        } else {
+            $lower_feed = array_change_key_case( $feed, CASE_LOWER );
+            $lower_sku = strtolower( $sku );
+            if ( isset( $lower_feed[ $lower_sku ] ) ) {
+                $supplier_qty = intval( $lower_feed[ $lower_sku ] );
             }
+        }
 
-            // ✅ Save product changes
-            $product->save();
+        // ✅ Get threshold limit (default 1)
+        $threshold = get_option( 'sss_threshold_limit', 1 );
 
+        // ✅ Ensure stock management is enabled
+        if ( ! $product->get_manage_stock() ) {
+            $product->set_manage_stock( true );
+        }
 
-            // // If variation, update parent stock status
-            // if ( $product->is_type('variation') ) {
-            //     $parent_id = $product->get_parent_id();
-            //     if ( $parent_id ) {
-            //         $parent = wc_get_product( $parent_id );
-            //         if ( $parent ) {
-            //             $parent_stock_status = $parent->get_children() ? 'outofstock' : $parent->get_stock_status();
-            //             foreach ( $parent->get_children() as $child_id ) {
-            //                 $child = wc_get_product( $child_id );
-            //                 if ( $child && $child->is_in_stock() ) {
-            //                     $parent_stock_status = 'instock';
-            //                     break;
-            //                 }
-            //             }
-            //             $parent->set_stock_status( $parent_stock_status );
-            //             $parent->save();
-            //         }
-            //     }
-            // }
-        // }
+        // ✅ Update stock status based on supplier quantity
+        if ( $supplier_qty >= $threshold ) {
+            // Enough supplier stock → mark in stock or backorder allowed
+            $product->set_stock_status( 'onbackorder' );
+            if ( method_exists( $product, 'set_backorders' ) ) {
+                $product->set_backorders( 'notify' );
+            }
+        } else {
+            // Low or zero stock → mark out of stock
+            $product->set_stock_status( 'outofstock' );
+            if ( method_exists( $product, 'set_backorders' ) ) {
+                $product->set_backorders( 'no' );
+            }
+        }
+
+        // ✅ Handle special case: if site stock > 0 but status is backorder → fix it
+        $current_stock  = (int) $product->get_stock_quantity();
+        $current_status = $product->get_stock_status();
+
+        if ( $current_stock > 0 && $current_status === 'onbackorder' ) {
+            $product->set_stock_status( 'instock' );
+            if ( method_exists( $product, 'set_backorders' ) ) {
+                $product->set_backorders( 'no' );
+            }
+        }
+
+        // ✅ Save product changes
+        $product->save();
     }
+
 
 
 
