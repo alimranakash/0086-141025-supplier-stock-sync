@@ -125,6 +125,8 @@ class Supplier_Stock_Sync {
         // Order email backorder notice
         add_action( 'woocommerce_email_order_details', array( $this, 'add_email_backorder_notice' ), 5, 4 );
 
+        add_filter( 'cron_schedules', array( $this, 'add_cron_interval' ) );
+
         // Add CSS for notices
         add_action( 'wp_head', array( $this, 'add_frontend_styles' ) );
     }
@@ -145,14 +147,29 @@ class Supplier_Stock_Sync {
         add_shortcode( 'supplier_backorder_note', array( $this, 'product_backorder_shortcode' ) );
         add_shortcode( 'supplier_checkout_note', array( $this, 'checkout_backorder_shortcode' ) );
     }
+
+    /**
+     * Add custom 30-minute cron schedule
+     */
+    public function add_cron_interval( $schedules ) {
+        if ( ! isset( $schedules['every_30_minutes'] ) ) {
+            $schedules['every_30_minutes'] = array(
+                'interval' => 30 * MINUTE_IN_SECONDS,
+                'display'  => __( 'Every 30 Minutes', 'supplier-stock-sync' ),
+            );
+        }
+        return $schedules;
+    }
+
     
     /**
      * Setup cron functionality
      */
     private function setup_cron() {
-        // Schedule the cron job if not already scheduled
+        wp_clear_scheduled_hook( SSS_Cron::ACTION_HOOK );
+        
         if ( ! wp_next_scheduled( SSS_Cron::ACTION_HOOK ) ) {
-            wp_schedule_event( time(), 'hourly', SSS_Cron::ACTION_HOOK );
+            wp_schedule_event( time(), 'every_30_minutes', SSS_Cron::ACTION_HOOK );
         }
     }
     
@@ -160,9 +177,10 @@ class Supplier_Stock_Sync {
      * Plugin activation
      */
     public function activate() {
-        // Schedule cron job
+        wp_clear_scheduled_hook( SSS_Cron::ACTION_HOOK );
+
         if ( ! wp_next_scheduled( SSS_Cron::ACTION_HOOK ) ) {
-            wp_schedule_event( time(), 'hourly', SSS_Cron::ACTION_HOOK );
+            wp_schedule_event( time(), 'every_30_minutes', SSS_Cron::ACTION_HOOK );
         }
     }
     
@@ -771,7 +789,7 @@ class Supplier_Stock_Sync {
  */
 function sss_activate_plugin() {
     if ( ! wp_next_scheduled( SSS_Cron::ACTION_HOOK ) ) {
-        wp_schedule_event( time(), 'hourly', SSS_Cron::ACTION_HOOK );
+        wp_schedule_event( time(), 'every_30_minutes', SSS_Cron::ACTION_HOOK );
     }
 }
 

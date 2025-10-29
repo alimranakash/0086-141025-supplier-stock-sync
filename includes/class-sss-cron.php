@@ -3,7 +3,7 @@
  * Cron / Action Scheduler integration
  *
  * Schedule a recurring action via Action Scheduler:
- * - Runs hourly by default
+ * - Runs every 30 minutes
  * - Fetches list of supplier-stocked items and updates them
  */
 
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class SSS_Cron {
 
     const ACTION_HOOK = 'sss_supplier_stock_update_action';
-    const INTERVAL_SECONDS = HOUR_IN_SECONDS; // hourly
+    const INTERVAL_SECONDS = 30 * MINUTE_IN_SECONDS; // every 30 minutes
 
     /**
      * Schedule the recurring action via Action Scheduler.
@@ -25,6 +25,12 @@ class SSS_Cron {
             return;
         }
 
+        // Clear any old scheduled actions (e.g., hourly)
+        if ( function_exists( 'as_unschedule_all_actions' ) ) {
+            as_unschedule_all_actions( self::ACTION_HOOK );
+        }
+
+        // Schedule a new one if not already scheduled
         if ( ! as_next_scheduled_action( self::ACTION_HOOK ) ) {
             as_schedule_recurring_action( time(), self::INTERVAL_SECONDS, self::ACTION_HOOK );
         }
