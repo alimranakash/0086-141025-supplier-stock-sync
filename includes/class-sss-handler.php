@@ -254,6 +254,7 @@ class SSS_Handler {
                 $supplier_qty = intval( $lower_feed[ $lower_sku ] );
             }
         }
+        // update_option('tttttttt-'.$product_or_id, $supplier_qty);
 
         // ✅ Get threshold limit (default 1)
         $threshold = get_option( 'sss_threshold_limit', 1 );

@@ -86,6 +86,9 @@ class SSS_Cron {
 
         // Clean any output that might have been generated
         ob_end_clean();
+
+        // ✅ Fire action hook after sync is fully completed
+        do_action( 'sss_after_sync_completed' );
     }
 }
 

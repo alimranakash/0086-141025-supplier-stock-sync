@@ -3,7 +3,7 @@
  * Plugin Name: Supplier Stock Sync
  * Plugin URI:  https://worzen.com/products/
  * Description: Sync product & variation stock with supplier CSV feed and auto-manage backorder / out-of-stock states. Uses Action Scheduler for background processing.
- * Version:     1.4.0
+ * Version:     1.4.2
  * Author:      Al Imran Akash
  * Author URI:  https://profiles.wordpress.org/al-imran-akash/
  * Text Domain: supplier-stock-sync
@@ -129,6 +129,7 @@ class Supplier_Stock_Sync {
 
         // Add CSS for notices
         add_action( 'wp_head', array( $this, 'add_frontend_styles' ) );
+        add_action( 'sss_after_sync_completed', array( $this, 'sss_after_sync_completed' ) );
     }
     
     /**
@@ -137,6 +138,7 @@ class Supplier_Stock_Sync {
     private function setup_admin() {
         if ( is_admin() ) {
             add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
+            add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_styles' ) );
         }
     }
     
@@ -167,7 +169,7 @@ class Supplier_Stock_Sync {
      */
     private function setup_cron() {
         wp_clear_scheduled_hook( SSS_Cron::ACTION_HOOK );
-        
+
         if ( ! wp_next_scheduled( SSS_Cron::ACTION_HOOK ) ) {
             wp_schedule_event( time(), 'every_30_minutes', SSS_Cron::ACTION_HOOK );
         }
@@ -200,6 +202,143 @@ class Supplier_Stock_Sync {
     }
     
     /**
+     * Enqueue admin styles
+     */
+    public function enqueue_admin_styles( $hook ) {
+        // Only load on our plugin pages
+        $plugin_pages = array(
+            'toplevel_page_supplier-stock-sync',
+            'supplier-stock-sync_page_supplier-stock-tester',
+            'supplier-stock-sync_page_supplier-messages',
+            'supplier-stock-sync_page_supplier-settings'
+        );
+
+        if ( in_array( $hook, $plugin_pages ) ) {
+            // Enqueue Tailwind CSS Play CDN (for development/prototyping)
+            wp_enqueue_script(
+                'sss-tailwind-css',
+                'https://cdn.tailwindcss.com',
+                array(),
+                '3.4.1',
+                false // Load in header
+            );
+
+            // Add Tailwind config and custom CSS
+            add_action( 'admin_head', function() {
+                ?>
+                <script>
+                    tailwind.config = {
+                        corePlugins: {
+                            preflight: false,
+                        },
+                        theme: {
+                            extend: {
+                                colors: {
+                                    primary: {
+                                        50: '#eff6ff',
+                                        100: '#dbeafe',
+                                        200: '#bfdbfe',
+                                        300: '#93c5fd',
+                                        400: '#60a5fa',
+                                        500: '#3b82f6',
+                                        600: '#2563eb',
+                                        700: '#1d4ed8',
+                                        800: '#1e40af',
+                                        900: '#1e3a8a',
+                                    },
+                                    success: {
+                                        50: '#f0fdf4',
+                                        100: '#dcfce7',
+                                        500: '#22c55e',
+                                        600: '#16a34a',
+                                        700: '#15803d',
+                                    },
+                                    warning: {
+                                        50: '#fffbeb',
+                                        100: '#fef3c7',
+                                        500: '#f59e0b',
+                                        600: '#d97706',
+                                    },
+                                    danger: {
+                                        50: '#fef2f2',
+                                        100: '#fee2e2',
+                                        500: '#ef4444',
+                                        600: '#dc2626',
+                                    }
+                                },
+                                animation: {
+                                    'fade-in': 'fadeIn 0.5s ease-in-out',
+                                    'slide-up': 'slideUp 0.4s ease-out',
+                                    'slide-down': 'slideDown 0.4s ease-out',
+                                    'scale-in': 'scaleIn 0.3s ease-out',
+                                    'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                                },
+                                keyframes: {
+                                    fadeIn: {
+                                        '0%': { opacity: '0' },
+                                        '100%': { opacity: '1' },
+                                    },
+                                    slideUp: {
+                                        '0%': { transform: 'translateY(20px)', opacity: '0' },
+                                        '100%': { transform: 'translateY(0)', opacity: '1' },
+                                    },
+                                    slideDown: {
+                                        '0%': { transform: 'translateY(-20px)', opacity: '0' },
+                                        '100%': { transform: 'translateY(0)', opacity: '1' },
+                                    },
+                                    scaleIn: {
+                                        '0%': { transform: 'scale(0.9)', opacity: '0' },
+                                        '100%': { transform: 'scale(1)', opacity: '1' },
+                                    }
+                                },
+                                boxShadow: {
+                                    'soft': '0 2px 15px 0 rgba(0, 0, 0, 0.05)',
+                                    'medium': '0 4px 20px 0 rgba(0, 0, 0, 0.08)',
+                                    'strong': '0 10px 40px 0 rgba(0, 0, 0, 0.12)',
+                                }
+                            }
+                        }
+                    }
+                </script>
+                <style type="text/tailwindcss">
+                    @layer utilities {
+                        .wrap.sss-admin-page {
+                            margin: -10px -20px 0 -20px !important;
+                            padding: 0 !important;
+                            min-height: calc(100vh - 32px);
+                        }
+                        .glass-effect {
+                            background: rgba(255, 255, 255, 0.9);
+                            backdrop-filter: blur(10px);
+                        }
+                        .gradient-border {
+                            border-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            border-image-slice: 1;
+                        }
+                    }
+                </style>
+                <style>
+                    #wpbody-content {
+                        padding-bottom: 0 !important;
+                    }
+                    /* Ensure Tailwind classes work properly */
+                    .wrap * {
+                        box-sizing: border-box;
+                    }
+                    /* Smooth transitions for all interactive elements */
+                    .sss-admin-page button,
+                    .sss-admin-page a,
+                    .sss-admin-page input,
+                    .sss-admin-page select {
+                        transition: all 0.2s ease-in-out;
+                    }
+                </style>
+                <?php
+            });
+        }
+    }
+
+    /**
      * Add admin menu
      */
     public function add_admin_menu() {
@@ -213,7 +352,7 @@ class Supplier_Stock_Sync {
             'dashicons-update',
             56
         );
-        
+
         // Add submenu pages
         add_submenu_page(
             'supplier-stock-sync',
@@ -223,7 +362,7 @@ class Supplier_Stock_Sync {
             'supplier-stock-tester',
             array( $this, 'admin_tester_page' )
         );
-        
+
         add_submenu_page(
             'supplier-stock-sync',
             'Messages',
@@ -308,6 +447,15 @@ class Supplier_Stock_Sync {
 
         if ( ! $product ) {
             return $availability_text;
+        }
+
+        // ✅ NEW FEATURE #1 — Skip message for excluded categories
+        $excluded_cats = get_option( 'sss_excluded_categories', array() );
+        if ( ! empty( $excluded_cats ) ) {
+            $product_cats = wp_get_post_terms( $product->get_id(), 'product_cat', array( 'fields' => 'ids' ) );
+            if ( array_intersect( $excluded_cats, $product_cats ) ) {
+                return $availability_text; // skip replacement if product in excluded cat
+            }
         }
 
         // Check if product is on backorder
@@ -459,77 +607,307 @@ class Supplier_Stock_Sync {
      * Admin dashboard page
      */
     public function admin_dashboard_page() {
+        $feed_data  = SSS_Handler::get_supplier_feed_data();
+        $stats      = SSS_Handler::get_feed_parsing_stats();
+
+        // Get products with supplier stocking enabled
+        $args = array(
+            'post_type'      => array( 'product', 'product_variation' ),
+            'posts_per_page' => -1,
+            'meta_query'     => array(
+                array(
+                    'key'   => '_supplier_stocked',
+                    'value' => 'yes',
+                ),
+            ),
+            'fields'         => 'ids',
+        );
+        $supplier_products  = get_posts( $args );
+        $next_cron          = wp_next_scheduled( SSS_Cron::ACTION_HOOK );
+        $last_sync          = get_option( 'sss_last_sync_time' );
         ?>
-        <div class="wrap">
-            <h1>Supplier Stock Sync</h1>
-            <p>Welcome to the Supplier Stock Sync plugin dashboard.</p>
+        <div class="wrap sss-admin-page bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
+            <!-- Top Bar with Gradient -->
+            <div class="bg-gradient-to-r from-primary-600 via-purple-600 to-pink-600 px-8 py-6 shadow-strong">
+                <div class="max-w-7xl mx-auto">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-4 animate-fade-in">
+                            <div class="bg-white/20 backdrop-blur-sm rounded-2xl p-3 shadow-lg">
+                                <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 class="text-3xl font-bold text-white mb-1">Supplier Stock Sync</h1>
+                                <p class="text-blue-100 text-sm">Real-time inventory synchronization dashboard</p>
+                            </div>
+                        </div>
+                        <?php if ( $last_sync ): ?>
+                        <div class="hidden md:flex items-center space-x-3 bg-white/10 backdrop-blur-sm rounded-xl px-5 py-3 border border-white/20 animate-slide-down">
+                            <div class="flex items-center space-x-2">
+                                <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                <span class="text-white text-sm font-medium">Last Sync</span>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-white font-semibold text-sm"><?php echo date( 'H:i:s', $last_sync ); ?></div>
+                                <div class="text-blue-100 text-xs"><?php echo date( 'M d, Y', $last_sync ); ?></div>
+                            </div>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
 
-            <div class="card" style="max-width: 600px;">
-                <h2>Plugin Overview</h2>
-                <p>This plugin automatically syncs your WooCommerce product stock status with supplier feed data.</p>
+            <!-- Main Content -->
+            <div class="max-w-7xl mx-auto px-8 py-8">
 
-                <h3>Features:</h3>
-                <ul>
-                    <li>✅ Automatic hourly stock synchronization</li>
-                    <li>✅ Automatic replacement of WooCommerce backorder text</li>
-                    <li>✅ Product page backorder messages</li>
-                    <li>✅ Checkout page backorder notices</li>
-                    <li>✅ Order email backorder notifications</li>
-                    <li>✅ Customizable messages</li>
-                </ul>
+                <!-- Stats Cards Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <!-- Feed Data Card -->
+                    <div class="group relative bg-white rounded-2xl shadow-soft hover:shadow-strong p-6 border border-gray-100 overflow-hidden transition-all duration-300 hover:-translate-y-1 animate-slide-up">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary-500/10 to-primary-600/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                        <div class="relative">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl p-3 shadow-lg">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                </div>
+                                <span class="text-xs font-semibold text-primary-600 bg-primary-50 px-3 py-1 rounded-full">FEED</span>
+                            </div>
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-1">Feed Data</p>
+                                <p class="text-4xl font-bold text-gray-900 mb-1"><?php echo number_format( count( $feed_data ) ); ?></p>
+                                <p class="text-sm text-gray-600">SKUs loaded</p>
+                            </div>
+                        </div>
+                    </div>
 
-                <h3>Quick Actions:</h3>
-                <p>
-                    <a href="<?php echo admin_url('admin.php?page=supplier-stock-tester'); ?>" class="button button-primary">Test Stock Sync</a>
-                    <a href="<?php echo admin_url('admin.php?page=supplier-messages'); ?>" class="button button-secondary">Customize Messages</a>
-                </p>
+                    <!-- Products Card -->
+                    <div class="group relative bg-white rounded-2xl shadow-soft hover:shadow-strong p-6 border border-gray-100 overflow-hidden transition-all duration-300 hover:-translate-y-1 animate-slide-up" style="animation-delay: 0.1s;">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-success-500/10 to-success-600/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                        <div class="relative">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="bg-gradient-to-br from-success-500 to-success-600 rounded-xl p-3 shadow-lg">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                                    </svg>
+                                </div>
+                                <span class="text-xs font-semibold text-success-600 bg-success-50 px-3 py-1 rounded-full">SYNCED</span>
+                            </div>
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-1">Products</p>
+                                <p class="text-4xl font-bold text-gray-900 mb-1"><?php echo number_format( count( $supplier_products ) ); ?></p>
+                                <p class="text-sm text-gray-600">Active items</p>
+                            </div>
+                        </div>
+                    </div>
 
-                <h3>System Status:</h3>
-                <?php
-                $feed_data  = SSS_Handler::get_supplier_feed_data();
-                $stats      = SSS_Handler::get_feed_parsing_stats();
-
-                // Get products with supplier stocking enabled
-                $args = array(
-                    'post_type'      => array( 'product', 'product_variation' ),
-                    'posts_per_page' => -1,
-                    'meta_query'     => array(
-                        array(
-                            'key'   => '_supplier_stocked',
-                            'value' => 'yes',
-                        ),
-                    ),
-                    'fields'         => 'ids',
-                );
-                $supplier_products  = get_posts( $args );
-                $next_cron          = wp_next_scheduled( SSS_Cron::ACTION_HOOK );
-                ?>
-
-                <table class="widefat">
-                    <tr>
-                        <td><strong>Feed Data Entries:</strong></td>
-                        <td><?php echo count( $feed_data ); ?> SKUs loaded</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Products with Supplier Stocking:</strong></td>
-                        <td><?php echo count( $supplier_products ); ?> products/variations</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Next Scheduled Sync:</strong></td>
-                        <td><?php echo $next_cron ? date( 'Y-m-d H:i:s', $next_cron ) : 'Not scheduled'; ?></td>
-                    </tr>
+                    <!-- Valid Entries Card -->
                     <?php if ( $stats ): ?>
-                    <tr>
-                        <td><strong>Last Feed Parse Stats:</strong></td>
-                        <td>
-                            <?php echo $stats['valid_entries']; ?> valid entries from <?php echo $stats['total_lines']; ?> CSV lines
-                            <?php if ( $stats['duplicate_skus'] > 0 ): ?>
-                                <br><em><?php echo $stats['duplicate_skus']; ?> duplicate SKUs found</em>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
+                    <div class="group relative bg-white rounded-2xl shadow-soft hover:shadow-strong p-6 border border-gray-100 overflow-hidden transition-all duration-300 hover:-translate-y-1 animate-slide-up" style="animation-delay: 0.2s;">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/10 to-purple-600/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                        <div class="relative">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-3 shadow-lg">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </div>
+                                <span class="text-xs font-semibold text-purple-600 bg-purple-50 px-3 py-1 rounded-full">VALID</span>
+                            </div>
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-1">Valid Entries</p>
+                                <p class="text-4xl font-bold text-gray-900 mb-1"><?php echo number_format( $stats['valid_entries'] ); ?></p>
+                                <p class="text-sm text-gray-600">of <?php echo number_format( $stats['total_lines'] ); ?> lines</p>
+                            </div>
+                        </div>
+                    </div>
                     <?php endif; ?>
-                </table>
+
+                    <!-- Next Sync Card -->
+                    <div class="group relative bg-white rounded-2xl shadow-soft hover:shadow-strong p-6 border border-gray-100 overflow-hidden transition-all duration-300 hover:-translate-y-1 animate-slide-up" style="animation-delay: 0.3s;">
+                        <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-warning-500/10 to-warning-600/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+                        <div class="relative">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="bg-gradient-to-br from-warning-500 to-warning-600 rounded-xl p-3 shadow-lg">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </div>
+                                <span class="text-xs font-semibold text-warning-600 bg-warning-50 px-3 py-1 rounded-full">SCHEDULED</span>
+                            </div>
+                            <div>
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-1">Next Sync</p>
+                                <p class="text-2xl font-bold text-gray-900 mb-1"><?php echo $next_cron ? date( 'H:i:s', $next_cron ) : 'Not scheduled'; ?></p>
+                                <p class="text-sm text-gray-600"><?php echo $next_cron ? date( 'M d, Y', $next_cron ) : 'Configure cron'; ?></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <!-- Plugin Overview -->
+                    <div class="lg:col-span-2 space-y-6">
+                        <!-- Overview Card -->
+                        <div class="bg-white rounded-2xl shadow-soft border border-gray-100 p-8 animate-fade-in">
+                            <div class="flex items-center mb-6">
+                                <div class="bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl p-3 shadow-lg mr-4">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-900">Plugin Overview</h2>
+                                    <p class="text-gray-500 text-sm">Automated inventory synchronization</p>
+                                </div>
+                            </div>
+
+                            <p class="text-gray-600 mb-6 leading-relaxed">This plugin automatically syncs your WooCommerce product stock status with supplier feed data, ensuring real-time inventory accuracy across your store.</p>
+
+                            <h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                                <span class="w-1 h-6 bg-gradient-to-b from-primary-500 to-primary-600 rounded-full mr-3"></span>
+                                Key Features
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                <div class="group flex items-start p-4 bg-gradient-to-r from-success-50 to-transparent rounded-xl hover:from-success-100 transition-all">
+                                    <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-success-500 to-success-600 rounded-lg flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-4">
+                                        <p class="font-semibold text-gray-900">Automatic Synchronization</p>
+                                        <p class="text-sm text-gray-600">Hourly stock updates</p>
+                                    </div>
+                                </div>
+                                <div class="group flex items-start p-4 bg-gradient-to-r from-primary-50 to-transparent rounded-xl hover:from-primary-100 transition-all">
+                                    <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-4">
+                                        <p class="font-semibold text-gray-900">Smart Text Replacement</p>
+                                        <p class="text-sm text-gray-600">Automatic backorder messages</p>
+                                    </div>
+                                </div>
+                                <div class="group flex items-start p-4 bg-gradient-to-r from-purple-50 to-transparent rounded-xl hover:from-purple-100 transition-all">
+                                    <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-4">
+                                        <p class="font-semibold text-gray-900">Product Page Messages</p>
+                                        <p class="text-sm text-gray-600">Custom backorder notices</p>
+                                    </div>
+                                </div>
+                                <div class="group flex items-start p-4 bg-gradient-to-r from-warning-50 to-transparent rounded-xl hover:from-warning-100 transition-all">
+                                    <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-warning-500 to-warning-600 rounded-lg flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-4">
+                                        <p class="font-semibold text-gray-900">Checkout Integration</p>
+                                        <p class="text-sm text-gray-600">Cart backorder alerts</p>
+                                    </div>
+                                </div>
+                                <div class="group flex items-start p-4 bg-gradient-to-r from-pink-50 to-transparent rounded-xl hover:from-pink-100 transition-all">
+                                    <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-4">
+                                        <p class="font-semibold text-gray-900">Email Notifications</p>
+                                        <p class="text-sm text-gray-600">Order backorder alerts</p>
+                                    </div>
+                                </div>
+                                <div class="group flex items-start p-4 bg-gradient-to-r from-indigo-50 to-transparent rounded-xl hover:from-indigo-100 transition-all">
+                                    <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                                        <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-4">
+                                        <p class="font-semibold text-gray-900">Fully Customizable</p>
+                                        <p class="text-sm text-gray-600">Personalized messages</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Alerts -->
+                            <?php if ( $stats && $stats['duplicate_skus'] > 0 ): ?>
+                            <div class="bg-gradient-to-r from-warning-50 to-warning-100 border-l-4 border-warning-500 p-5 rounded-xl shadow-soft animate-pulse-slow mt-6">
+                                <div class="flex items-start">
+                                    <div class="flex-shrink-0">
+                                        <svg class="w-6 h-6 text-warning-600" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="ml-3">
+                                        <h3 class="text-sm font-bold text-warning-800">Duplicate SKUs Detected</h3>
+                                        <p class="mt-1 text-sm text-warning-700">Found <strong><?php echo $stats['duplicate_skus']; ?></strong> duplicate SKUs in feed data</p>
+                                        <a href="<?php echo admin_url('admin.php?page=supplier-stock-tester'); ?>" class="mt-2 inline-flex items-center text-xs font-semibold text-warning-800 hover:text-warning-900">
+                                            View Details
+                                            <svg class="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                            </svg>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions Sidebar -->
+                    <div class="space-y-6">
+                        <!-- Quick Actions Card -->
+                        <div class="bg-white rounded-2xl shadow-soft border border-gray-100 p-6 animate-fade-in">
+                            <div class="flex items-center mb-6">
+                                <div class="bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl p-3 shadow-lg mr-3">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                    </svg>
+                                </div>
+                                <h2 class="text-xl font-bold text-gray-900">Quick Actions</h2>
+                            </div>
+                            <div class="space-y-3">
+                                <a href="<?php echo admin_url('admin.php?page=supplier-stock-tester'); ?>"
+                                   class="group flex items-center justify-between w-full bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white font-semibold py-3.5 px-5 rounded-xl transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                                    <span>Test Stock Feed</span>
+                                    <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                                    </svg>
+                                </a>
+                                <a href="<?php echo admin_url('admin.php?page=supplier-messages'); ?>"
+                                   class="group flex items-center justify-between w-full bg-gradient-to-r from-success-600 to-success-700 hover:from-success-700 hover:to-success-800 text-white font-semibold py-3.5 px-5 rounded-xl transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                                    <span>Configure Messages</span>
+                                    <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                                    </svg>
+                                </a>
+                                <a href="<?php echo admin_url('admin.php?page=supplier-settings'); ?>"
+                                   class="group flex items-center justify-between w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-semibold py-3.5 px-5 rounded-xl transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                                    <span>Plugin Settings</span>
+                                    <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                                    </svg>
+                                </a>
+                                <button onclick="location.reload();"
+                                        class="group flex items-center justify-between w-full bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white font-semibold py-3.5 px-5 rounded-xl transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5">
+                                    <span>Refresh Dashboard</span>
+                                    <svg class="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         <?php
@@ -539,58 +917,297 @@ class Supplier_Stock_Sync {
      * Admin tester page
      */
     public function admin_tester_page() {
+        $show_feed = false;
+        $feed = array();
+        $parsing_time = 0;
+        $stats = null;
+
         // Handle form submissions
+        $success_message = '';
         if ( isset($_POST['clear_cache']) ) {
             SSS_Handler::clear_feed_cache();
-            echo '<div style="background:#d7ffd9;padding:10px;margin-top:15px;border:1px solid #70d47b;">✅ Feed cache cleared successfully!</div>';
+            $success_message = 'Feed cache cleared successfully!';
         }
 
         if ( isset($_POST['run_supplier_check']) ) {
-            // Run the actual sync
-            // SSS_Handler::clear_feed_cache();
             SSS_Cron::run();
-            echo '<div style="background:#d7ffd9;padding:10px;margin-top:15px;border:1px solid #70d47b;">✅ Feed Sync Completed Successfully!</div>';
+            $success_message = 'Feed Sync Completed Successfully!';
         }
 
         if ( isset($_POST['view_feed']) ) {
-            $start_time     = microtime(true);
-            $feed           = SSS_Handler::get_supplier_feed_data();
-            $end_time       = microtime(true);
-            $parsing_time   = round(($end_time - $start_time) * 1000, 2);
-
-            echo '<h3>Feed Preview (Parsed in ' . $parsing_time . 'ms):</h3>';
-            echo '<p><strong>Total entries:</strong> ' . count($feed) . '</p>';
-
-            // Show parsing stats if available
+            $show_feed = true;
+            $start_time = microtime(true);
+            $feed = SSS_Handler::get_supplier_feed_data();
+            $end_time = microtime(true);
+            $parsing_time = round(($end_time - $start_time) * 1000, 2);
             $stats = SSS_Handler::get_feed_parsing_stats();
-            if ($stats) {
-                echo '<div style="background:#f0f0f0;padding:10px;margin:10px 0;border-radius:5px;">';
-                echo '<strong>Parsing Stats:</strong><br>';
-                echo 'Total CSV lines: ' . $stats['total_lines'] . '<br>';
-                echo 'Valid entries: ' . $stats['valid_entries'] . '<br>';
-                echo 'Skipped (no SKU): ' . $stats['skipped_no_sku'] . '<br>';
-                echo 'Duplicate SKUs: ' . $stats['duplicate_skus'] . '<br>';
-                echo '</div>';
-            }
-
-            echo '<pre style="background:#fff;border:1px solid #ccc;padding:10px;max-height:500px;overflow:auto;">';
-            foreach ($feed as $sku => $qty) {
-                echo htmlspecialchars($sku) . ' => ' . $qty . "\n";
-            }
-            echo '</pre>';
         }
 
-        echo '
-        <div class="wrap">
-            <h1>Stock Sync Tester</h1>
-            <p>Use this page to manually test the supplier stock sync functionality.</p>
+        ?>
+        <div class="wrap sss-admin-page bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+            <!-- Top Bar -->
+            <div class="bg-gradient-to-r from-primary-600 via-indigo-600 to-purple-600 px-8 py-6 shadow-strong">
+                <div class="max-w-7xl mx-auto">
+                    <div class="flex items-center space-x-4 animate-fade-in">
+                        <div class="bg-white/20 backdrop-blur-sm rounded-2xl p-3 shadow-lg">
+                            <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="text-3xl font-bold text-white mb-1">Stock Sync Tester</h1>
+                            <p class="text-blue-100 text-sm">Test and validate your supplier feed integration</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-        <form method="post" style="margin-top:20px;">
-            <input type="submit" name="run_supplier_check" class="button button-primary" value="🔄 Run Stock Sync Now" />
-            <input type="submit" name="view_feed" class="button button-secondary" value="👁️ View Feed Data" />
-            <input type="submit" name="clear_cache" class="button button-secondary" value="🗑️ Clear Feed Cache" />
-        </form>
-        </div>';
+            <!-- Main Content -->
+            <div class="max-w-7xl mx-auto px-8 py-8">
+
+                <!-- Success Message -->
+                <?php if ( $success_message ): ?>
+                <div class="bg-gradient-to-r from-success-50 to-success-100 border-l-4 border-success-500 p-5 mb-6 rounded-xl shadow-soft animate-slide-down">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <svg class="w-6 h-6 text-success-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                        <p class="ml-3 font-semibold text-success-800"><?php echo $success_message; ?></p>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Test Actions Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                    <form method="post" class="animate-fade-in" style="animation-delay: 0s;">
+                        <div class="group relative bg-white rounded-2xl shadow-soft border-2 border-primary-200 hover:border-primary-400 p-8 h-full transition-all hover:shadow-strong transform hover:-translate-y-2 overflow-hidden">
+                            <!-- Decorative Background -->
+                            <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-primary-500/10 to-primary-600/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+
+                            <div class="relative">
+                                <!-- Icon -->
+                                <div class="bg-gradient-to-br from-primary-500 to-primary-600 rounded-2xl p-5 shadow-lg mb-6 inline-block group-hover:scale-110 transition-transform">
+                                    <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                </div>
+
+                                <!-- Content -->
+                                <h3 class="text-2xl font-bold text-gray-900 mb-3">Run Stock Sync</h3>
+                                <p class="text-gray-600 mb-6 leading-relaxed">Manually trigger the stock synchronization process to update product inventory from supplier feed</p>
+
+                                <!-- Stats -->
+                                <div class="bg-primary-50 rounded-xl p-4 mb-6 border border-primary-100">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-xs font-semibold text-primary-700 uppercase tracking-wider">Frequency</span>
+                                        <span class="text-sm font-bold text-primary-900">Every 30 min</span>
+                                    </div>
+                                </div>
+
+                                <!-- Button -->
+                                <button type="submit" name="run_supplier_check"
+                                        class="w-full bg-gradient-to-r from-primary-600 to-primary-700 hover:from-primary-700 hover:to-primary-800 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center group">
+                                    <svg class="w-5 h-5 mr-2 group-hover:rotate-180 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                    Execute Sync
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <form method="post" class="animate-fade-in" style="animation-delay: 0.1s;">
+                        <div class="group relative bg-white rounded-2xl shadow-soft border-2 border-success-200 hover:border-success-400 p-8 h-full transition-all hover:shadow-strong transform hover:-translate-y-2 overflow-hidden">
+                            <!-- Decorative Background -->
+                            <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-success-500/10 to-success-600/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+
+                            <div class="relative">
+                                <!-- Icon -->
+                                <div class="bg-gradient-to-br from-success-500 to-success-600 rounded-2xl p-5 shadow-lg mb-6 inline-block group-hover:scale-110 transition-transform">
+                                    <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                    </svg>
+                                </div>
+
+                                <!-- Content -->
+                                <h3 class="text-2xl font-bold text-gray-900 mb-3">View Feed Data</h3>
+                                <p class="text-gray-600 mb-6 leading-relaxed">Inspect the current supplier feed data with detailed parsing statistics and SKU information</p>
+
+                                <!-- Stats -->
+                                <div class="bg-success-50 rounded-xl p-4 mb-6 border border-success-100">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-xs font-semibold text-success-700 uppercase tracking-wider">Data Source</span>
+                                        <span class="text-sm font-bold text-success-900">CSV Feed</span>
+                                    </div>
+                                </div>
+
+                                <!-- Button -->
+                                <button type="submit" name="view_feed"
+                                        class="w-full bg-gradient-to-r from-success-600 to-success-700 hover:from-success-700 hover:to-success-800 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center group">
+                                    <svg class="w-5 h-5 mr-2 group-hover:scale-125 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                                    </svg>
+                                    Inspect Feed
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <form method="post" class="animate-fade-in" style="animation-delay: 0.2s;">
+                        <div class="group relative bg-white rounded-2xl shadow-soft border-2 border-danger-200 hover:border-danger-400 p-8 h-full transition-all hover:shadow-strong transform hover:-translate-y-2 overflow-hidden">
+                            <!-- Decorative Background -->
+                            <div class="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-danger-500/10 to-danger-600/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500"></div>
+
+                            <div class="relative">
+                                <!-- Icon -->
+                                <div class="bg-gradient-to-br from-danger-500 to-danger-600 rounded-2xl p-5 shadow-lg mb-6 inline-block group-hover:scale-110 transition-transform">
+                                    <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                    </svg>
+                                </div>
+
+                                <!-- Content -->
+                                <h3 class="text-2xl font-bold text-gray-900 mb-3">Clear Feed Cache</h3>
+                                <p class="text-gray-600 mb-6 leading-relaxed">Remove cached feed data to force a fresh fetch from the supplier on the next synchronization</p>
+
+                                <!-- Stats -->
+                                <div class="bg-danger-50 rounded-xl p-4 mb-6 border border-danger-100">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-xs font-semibold text-danger-700 uppercase tracking-wider">Action Type</span>
+                                        <span class="text-sm font-bold text-danger-900">Destructive</span>
+                                    </div>
+                                </div>
+
+                                <!-- Button -->
+                                <button type="submit" name="clear_cache"
+                                        class="w-full bg-gradient-to-r from-danger-600 to-danger-700 hover:from-danger-700 hover:to-danger-800 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center group">
+                                    <svg class="w-5 h-5 mr-2 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                    </svg>
+                                    Clear Cache
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+
+                <?php if ( $show_feed ): ?>
+                <!-- Feed Preview -->
+                <div class="bg-white rounded-2xl shadow-soft border border-gray-100 p-8 mb-8 animate-slide-up">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center">
+                            <div class="bg-gradient-to-br from-success-500 to-success-600 rounded-xl p-3 shadow-lg mr-4">
+                                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <div>
+                                <h2 class="text-2xl font-bold text-gray-900">Feed Preview</h2>
+                                <p class="text-gray-500 text-sm">Real-time feed data analysis</p>
+                            </div>
+                        </div>
+                        <div class="bg-gradient-to-r from-primary-50 to-primary-100 border border-primary-200 px-4 py-2 rounded-xl">
+                            <div class="flex items-center space-x-2">
+                                <svg class="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                </svg>
+                                <span class="text-primary-800 text-sm font-semibold">Parsed in <?php echo $parsing_time; ?>ms</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gradient-to-r from-primary-50 to-purple-50 rounded-xl p-5 mb-6 border border-primary-100">
+                        <div class="flex items-center">
+                            <svg class="w-5 h-5 text-primary-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <p class="text-gray-700"><strong class="text-gray-900">Total entries:</strong> <span class="text-primary-600 font-bold text-lg ml-2"><?php echo number_format(count($feed)); ?></span></p>
+                        </div>
+                    </div>
+
+                    <?php if ($stats): ?>
+                    <div class="mb-6">
+                        <h3 class="font-bold text-gray-900 mb-4 flex items-center text-lg">
+                            <span class="w-1 h-6 bg-gradient-to-b from-primary-500 to-primary-600 rounded-full mr-3"></span>
+                            Parsing Statistics
+                        </h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="group bg-gradient-to-br from-gray-50 to-gray-100 p-5 rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all">
+                                <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-2">Total CSV Lines</p>
+                                <p class="text-3xl font-bold text-gray-800"><?php echo number_format($stats['total_lines']); ?></p>
+                            </div>
+                            <div class="group bg-gradient-to-br from-success-50 to-success-100 p-5 rounded-xl border border-success-200 hover:border-success-300 hover:shadow-md transition-all">
+                                <p class="text-success-600 text-xs font-semibold uppercase tracking-wider mb-2">Valid Entries</p>
+                                <p class="text-3xl font-bold text-success-700"><?php echo number_format($stats['valid_entries']); ?></p>
+                            </div>
+                            <div class="group bg-gradient-to-br from-warning-50 to-warning-100 p-5 rounded-xl border border-warning-200 hover:border-warning-300 hover:shadow-md transition-all">
+                                <p class="text-warning-600 text-xs font-semibold uppercase tracking-wider mb-2">Skipped (No SKU)</p>
+                                <p class="text-3xl font-bold text-warning-700"><?php echo number_format($stats['skipped_no_sku']); ?></p>
+                            </div>
+                            <div class="group bg-gradient-to-br from-danger-50 to-danger-100 p-5 rounded-xl border border-danger-200 hover:border-danger-300 hover:shadow-md transition-all">
+                                <p class="text-danger-600 text-xs font-semibold uppercase tracking-wider mb-2">Duplicate SKUs</p>
+                                <p class="text-3xl font-bold text-danger-700"><?php echo number_format($stats['duplicate_skus']); ?></p>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <div class="relative">
+                        <div class="absolute top-4 right-4 bg-gray-800 text-gray-300 text-xs px-3 py-1 rounded-lg font-mono">
+                            SKU => QTY
+                        </div>
+                        <div class="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-6 overflow-auto shadow-inner border border-gray-700" style="max-height: 500px;">
+                            <pre class="text-green-400 text-sm font-mono leading-relaxed"><?php
+                                foreach ($feed as $sku => $qty) {
+                                    echo '<span class="text-gray-500">' . htmlspecialchars($sku) . '</span> <span class="text-blue-400">=></span> <span class="text-green-400 font-bold">' . $qty . "</span>\n";
+                                }
+                            ?></pre>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Information Card -->
+                <div class="bg-gradient-to-r from-primary-50 to-indigo-50 border-l-4 border-primary-500 p-6 rounded-xl shadow-soft">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0">
+                            <div class="bg-primary-100 rounded-full p-3">
+                                <svg class="w-6 h-6 text-primary-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <h3 class="text-lg font-bold text-primary-900 mb-3">Testing Information</h3>
+                            <div class="space-y-2">
+                                <div class="flex items-start">
+                                    <svg class="w-5 h-5 text-primary-600 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <p class="text-primary-800"><strong class="font-semibold">Run Stock Sync Now:</strong> Manually triggers the stock synchronization process</p>
+                                </div>
+                                <div class="flex items-start">
+                                    <svg class="w-5 h-5 text-primary-600 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <p class="text-primary-800"><strong class="font-semibold">View Feed Data:</strong> Displays the current supplier feed data and parsing statistics</p>
+                                </div>
+                                <div class="flex items-start">
+                                    <svg class="w-5 h-5 text-primary-600 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <p class="text-primary-800"><strong class="font-semibold">Clear Feed Cache:</strong> Removes cached feed data to force a fresh fetch on next sync</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php
     }
 
     /**
@@ -624,11 +1241,6 @@ class Supplier_Stock_Sync {
             exit;
         }
 
-        // Show success message after redirect
-        if ( isset( $_GET['settings-updated'] ) && $_GET['settings-updated'] === 'true' ) {
-            echo '<div class="notice notice-success is-dismissible"><p><strong>Messages saved successfully!</strong></p></div>';
-        }
-
         $current_messages = get_option( 'sss_backorder_messages', array() );
         $defaults = array(
             'product' => 'Order today for dispatch in 4 days',
@@ -637,149 +1249,558 @@ class Supplier_Stock_Sync {
         );
 
         ?>
-        <div class="wrap">
-            <h1>Backorder Messages</h1>
-            <p>Customize the backorder messages displayed in different locations.</p>
-
-            <form method="post" action="">
-                <?php wp_nonce_field( 'sss_save_messages', 'sss_messages_nonce' ); ?>
-
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">
-                            <label for="product_message">Product Page Message</label>
-                        </th>
-                        <td>
-                            <input type="text" id="product_message" name="product_message"
-                                   value="<?php echo esc_attr( isset( $current_messages['product'] ) ? $current_messages['product'] : $defaults['product'] ); ?>"
-                                   class="regular-text" />
-                            <p class="description">Message automatically shown on product detail pages when item is on backorder (replaces WooCommerce's default "Available on backorder" text).</p>
-                            <p class="description"><strong>Shortcode:</strong> <code>[supplier_backorder_note]</code> (for manual placement)</p>
-                        </td>
-                    </tr>
-
-                    <tr>
-                        <th scope="row">
-                            <label for="checkout_message">Checkout Page Message</label>
-                        </th>
-                        <td>
-                            <input type="text" id="checkout_message" name="checkout_message"
-                                   value="<?php echo esc_attr( isset( $current_messages['checkout'] ) ? $current_messages['checkout'] : $defaults['checkout'] ); ?>"
-                                   class="regular-text" />
-                            <p class="description">Message shown on checkout page when cart contains backordered items.</p>
-                            <p class="description"><strong>Shortcode:</strong> <code>[supplier_checkout_note]</code> (also displays automatically)</p>
-                        </td>
-                    </tr>
-
-                    <tr>
-                        <th scope="row">
-                            <label for="email_message">Order Email Message</label>
-                        </th>
-                        <td>
-                            <input type="text" id="email_message" name="email_message"
-                                   value="<?php echo esc_attr( isset( $current_messages['email'] ) ? $current_messages['email'] : $defaults['email'] ); ?>"
-                                   class="regular-text" />
-                            <p class="description">Message included in order confirmation emails when order contains backordered items.</p>
-                            <p class="description">Automatically added to all order emails (customer and admin).</p>
-                        </td>
-                    </tr>
-                </table>
-
-                <p class="submit">
-                    <input type="submit" name="save_messages" class="button-primary" value="Save Messages" />
-                </p>
-            </form>
-
-            <div style="background:#f0f0f0;padding:15px;margin-top:30px;border-radius:5px;">
-                <h3>Usage Instructions</h3>
-                <ul>
-                    <li><strong>Product Pages:</strong> Message automatically replaces WooCommerce's default "Available on backorder" text. You can also use shortcode <code>[supplier_backorder_note]</code> for manual placement or <code>[supplier_backorder_note text="Custom message"]</code> to override.</li>
-                    <li><strong>Checkout Page:</strong> Message displays automatically when cart has backordered items. You can also use <code>[supplier_checkout_note]</code> shortcode.</li>
-                    <li><strong>Order Emails:</strong> Message is automatically added to all order confirmation emails when the order contains backordered products.</li>
-                </ul>
+        <div class="wrap sss-admin-page bg-gradient-to-br from-gray-50 via-purple-50 to-pink-50">
+            <!-- Top Bar -->
+            <div class="bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 px-8 py-6 shadow-strong">
+                <div class="max-w-7xl mx-auto">
+                    <div class="flex items-center space-x-4 animate-fade-in">
+                        <div class="bg-white/20 backdrop-blur-sm rounded-2xl p-3 shadow-lg">
+                            <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="text-3xl font-bold text-white mb-1">Backorder Messages</h1>
+                            <p class="text-purple-100 text-sm">Customize customer-facing backorder notifications</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <?php if ( isset( $_GET['debug'] ) && $_GET['debug'] === '1' ): ?>
-            <div style="background:#fff3cd;padding:15px;margin-top:30px;border-radius:5px;border:1px solid #ffeaa7;">
-                <h3>🔍 Debug Information</h3>
-                <p><strong>Current saved messages in database:</strong></p>
-                <pre style="background:#fff;padding:10px;border:1px solid #ddd;overflow:auto;"><?php
-                    $debug_messages = get_option( 'sss_backorder_messages', 'NOT SET' );
-                    print_r( $debug_messages );
-                ?></pre>
+            <!-- Main Content -->
+            <div class="max-w-7xl mx-auto px-8 py-8">
 
-                <p><strong>Messages returned by get_message() method:</strong></p>
-                <ul>
-                    <li><strong>Product:</strong> <?php echo esc_html( $this->get_message( 'product' ) ); ?></li>
-                    <li><strong>Checkout:</strong> <?php echo esc_html( $this->get_message( 'checkout' ) ); ?></li>
-                    <li><strong>Email:</strong> <?php echo esc_html( $this->get_message( 'email' ) ); ?></li>
-                </ul>
+                <!-- Success Message -->
+                <?php if ( isset( $_GET['settings-updated'] ) && $_GET['settings-updated'] === 'true' ): ?>
+                <div class="bg-gradient-to-r from-success-50 to-success-100 border-l-4 border-success-500 p-5 mb-6 rounded-xl shadow-soft animate-slide-down">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <svg class="w-6 h-6 text-success-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                        <p class="ml-3 font-semibold text-success-800">Messages saved successfully!</p>
+                    </div>
+                </div>
+                <?php endif; ?>
 
-                <p><a href="<?php echo remove_query_arg( 'debug' ); ?>">Hide Debug Info</a></p>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <!-- Messages Form -->
+                    <div class="lg:col-span-2">
+                        <div class="bg-white rounded-2xl shadow-soft border border-gray-100 p-8 animate-fade-in">
+                            <div class="flex items-center mb-8">
+                                <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-3 shadow-lg mr-4">
+                                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-900">Message Settings</h2>
+                                    <p class="text-gray-500 text-sm">Configure messages for different touchpoints</p>
+                                </div>
+                            </div>
+
+                            <form method="post" action="">
+                                <?php wp_nonce_field( 'sss_save_messages', 'sss_messages_nonce' ); ?>
+
+                                <!-- Product Page Message -->
+                                <div class="mb-8 group">
+                                    <label for="product_message" class="flex items-center text-sm font-bold text-gray-900 mb-3">
+                                        <div class="bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg p-2 mr-3">
+                                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
+                                            </svg>
+                                        </div>
+                                        Product Page Message
+                                    </label>
+                                    <input type="text" id="product_message" name="product_message"
+                                           value="<?php echo esc_attr( isset( $current_messages['product'] ) ? $current_messages['product'] : $defaults['product'] ); ?>"
+                                           class="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all text-gray-900 font-medium"
+                                           placeholder="Enter product page message..." />
+                                    <div class="mt-3 bg-primary-50 rounded-lg p-4 border border-primary-100">
+                                        <p class="text-sm text-primary-800 mb-2">📍 Message automatically shown on product detail pages when item is on backorder</p>
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-xs font-semibold text-primary-700">Shortcode:</span>
+                                            <code class="bg-white px-3 py-1 rounded-lg text-xs font-mono text-primary-900 border border-primary-200">[supplier_backorder_note]</code>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Checkout Page Message -->
+                                <div class="mb-8 group">
+                                    <label for="checkout_message" class="flex items-center text-sm font-bold text-gray-900 mb-3">
+                                        <div class="bg-gradient-to-br from-success-500 to-success-600 rounded-lg p-2 mr-3">
+                                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                                            </svg>
+                                        </div>
+                                        Checkout Page Message
+                                    </label>
+                                    <input type="text" id="checkout_message" name="checkout_message"
+                                           value="<?php echo esc_attr( isset( $current_messages['checkout'] ) ? $current_messages['checkout'] : $defaults['checkout'] ); ?>"
+                                           class="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-success-500 focus:border-success-500 transition-all text-gray-900 font-medium"
+                                           placeholder="Enter checkout page message..." />
+                                    <div class="mt-3 bg-success-50 rounded-lg p-4 border border-success-100">
+                                        <p class="text-sm text-success-800 mb-2">🛒 Message shown on checkout page when cart contains backordered items</p>
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-xs font-semibold text-success-700">Shortcode:</span>
+                                            <code class="bg-white px-3 py-1 rounded-lg text-xs font-mono text-success-900 border border-success-200">[supplier_checkout_note]</code>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Order Email Message -->
+                                <div class="mb-8 group">
+                                    <label for="email_message" class="flex items-center text-sm font-bold text-gray-900 mb-3">
+                                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg p-2 mr-3">
+                                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                            </svg>
+                                        </div>
+                                        Order Email Message
+                                    </label>
+                                    <input type="text" id="email_message" name="email_message"
+                                           value="<?php echo esc_attr( isset( $current_messages['email'] ) ? $current_messages['email'] : $defaults['email'] ); ?>"
+                                           class="w-full px-5 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all text-gray-900 font-medium"
+                                           placeholder="Enter email message..." />
+                                    <div class="mt-3 bg-purple-50 rounded-lg p-4 border border-purple-100">
+                                        <p class="text-sm text-purple-800 mb-2">📧 Message included in order confirmation emails when order contains backordered items</p>
+                                        <p class="text-xs text-purple-700">Automatically added to all order emails (customer and admin)</p>
+                                    </div>
+                                </div>
+
+                                <!-- Submit Button -->
+                                <div class="flex items-center justify-between pt-6 border-t-2 border-gray-100">
+                                    <button type="submit" name="save_messages"
+                                            class="group bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-4 px-10 rounded-xl transition-all shadow-md hover:shadow-strong transform hover:-translate-y-0.5 flex items-center">
+                                        <svg class="w-5 h-5 mr-2 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                        </svg>
+                                        Save All Messages
+                                    </button>
+                                    <span class="text-sm text-gray-500">Changes apply immediately</span>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Sidebar -->
+                    <div class="space-y-6">
+                        <!-- Usage Instructions -->
+                        <div class="bg-white rounded-2xl shadow-soft border border-gray-100 p-6 animate-fade-in">
+                            <div class="flex items-center mb-5">
+                                <div class="bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl p-2.5 shadow-lg mr-3">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </div>
+                                <h3 class="text-lg font-bold text-gray-900">Usage Guide</h3>
+                            </div>
+                            <div class="space-y-4">
+                                <div class="group bg-gradient-to-r from-primary-50 to-transparent p-4 rounded-xl border-l-4 border-primary-500 hover:from-primary-100 transition-all">
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 mt-0.5">
+                                            <div class="bg-primary-100 rounded-lg p-2">
+                                                <svg class="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="font-bold text-gray-900 text-sm mb-1">Product Pages</p>
+                                            <p class="text-xs text-gray-600 leading-relaxed">Replaces WooCommerce's default "Available on backorder" text</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="group bg-gradient-to-r from-success-50 to-transparent p-4 rounded-xl border-l-4 border-success-500 hover:from-success-100 transition-all">
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 mt-0.5">
+                                            <div class="bg-success-100 rounded-lg p-2">
+                                                <svg class="w-4 h-4 text-success-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="font-bold text-gray-900 text-sm mb-1">Checkout Page</p>
+                                            <p class="text-xs text-gray-600 leading-relaxed">Displays automatically when cart has backordered items</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="group bg-gradient-to-r from-purple-50 to-transparent p-4 rounded-xl border-l-4 border-purple-500 hover:from-purple-100 transition-all">
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 mt-0.5">
+                                            <div class="bg-purple-100 rounded-lg p-2">
+                                                <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p class="font-bold text-gray-900 text-sm mb-1">Order Emails</p>
+                                            <p class="text-xs text-gray-600 leading-relaxed">Added to all order confirmation emails automatically</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Debug Info -->
+                        <?php if ( isset( $_GET['debug'] ) && $_GET['debug'] === '1' ): ?>
+                        <div class="bg-gradient-to-br from-warning-50 to-warning-100 border-2 border-warning-300 rounded-2xl shadow-soft p-6 animate-slide-up">
+                            <div class="flex items-center mb-5">
+                                <div class="bg-warning-500 rounded-xl p-2.5 shadow-lg mr-3">
+                                    <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                                    </svg>
+                                </div>
+                                <h3 class="text-lg font-bold text-warning-900">Debug Info</h3>
+                            </div>
+                            <div class="mb-4">
+                                <p class="font-bold text-warning-900 text-sm mb-2">Database Values:</p>
+                                <pre class="bg-white p-4 rounded-xl border-2 border-warning-200 text-xs overflow-auto font-mono text-gray-800 shadow-inner"><?php
+                                    $debug_messages = get_option( 'sss_backorder_messages', 'NOT SET' );
+                                    print_r( $debug_messages );
+                                ?></pre>
+                            </div>
+                            <div class="mb-4">
+                                <p class="font-bold text-warning-900 text-sm mb-3">Active Messages:</p>
+                                <div class="space-y-2">
+                                    <div class="bg-white rounded-lg p-3 border border-warning-200">
+                                        <p class="text-xs font-semibold text-warning-700 mb-1">Product:</p>
+                                        <p class="text-sm text-gray-800"><?php echo esc_html( $this->get_message( 'product' ) ); ?></p>
+                                    </div>
+                                    <div class="bg-white rounded-lg p-3 border border-warning-200">
+                                        <p class="text-xs font-semibold text-warning-700 mb-1">Checkout:</p>
+                                        <p class="text-sm text-gray-800"><?php echo esc_html( $this->get_message( 'checkout' ) ); ?></p>
+                                    </div>
+                                    <div class="bg-white rounded-lg p-3 border border-warning-200">
+                                        <p class="text-xs font-semibold text-warning-700 mb-1">Email:</p>
+                                        <p class="text-sm text-gray-800"><?php echo esc_html( $this->get_message( 'email' ) ); ?></p>
+                                    </div>
+                                </div>
+                            </div>
+                            <a href="<?php echo remove_query_arg( 'debug' ); ?>"
+                               class="inline-flex items-center text-warning-800 hover:text-warning-900 font-semibold text-sm bg-white px-4 py-2 rounded-lg border border-warning-300 hover:border-warning-400 transition-all">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                                Hide Debug Info
+                            </a>
+                        </div>
+                        <?php else: ?>
+                        <div class="bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl p-5 text-center border border-gray-300 hover:border-gray-400 transition-all">
+                            <a href="<?php echo add_query_arg( 'debug', '1' ); ?>"
+                               class="inline-flex items-center text-gray-700 hover:text-gray-900 font-semibold text-sm">
+                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                </svg>
+                                Show Debug Information
+                            </a>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
-            <?php else: ?>
-            <p style="margin-top:20px;"><a href="<?php echo add_query_arg( 'debug', '1' ); ?>">Show Debug Information</a></p>
-            <?php endif; ?>
         </div>
         <?php
     }
 
     /**
-     * Admin Settings Page — for Threshold Limit
+     * Admin Settings Page — add Threshold Limit, Excluded Categories, and Display Last Sync Time
      */
     public function admin_settings_page() {
-        // Handle form submission
-        if ( isset( $_POST['save_threshold'] ) && check_admin_referer( 'sss_save_threshold', 'sss_threshold_nonce' ) ) {
+        $settings_saved = false;
+
+        // ✅ Handle Unified Settings Save
+        if ( isset( $_POST['save_settings'] ) && check_admin_referer( 'sss_save_settings', 'sss_settings_nonce' ) ) {
+            // Save Threshold
             $threshold = isset( $_POST['sss_threshold_limit'] ) ? absint( $_POST['sss_threshold_limit'] ) : 1;
             update_option( 'sss_threshold_limit', $threshold );
 
-            // Redirect to avoid resubmission
-            $redirect_url = add_query_arg(
-                array(
-                    'page' => 'supplier-settings',
-                    'settings-updated' => 'true'
-                ),
-                admin_url( 'admin.php' )
-            );
-            wp_redirect( $redirect_url );
-            exit;
+            // Save Excluded Categories
+            $excluded = isset( $_POST['sss_excluded_categories'] ) ? array_map( 'absint', $_POST['sss_excluded_categories'] ) : array();
+            update_option( 'sss_excluded_categories', $excluded );
+
+            $settings_saved = true;
         }
 
-        // Show success message
-        if ( isset( $_GET['settings-updated'] ) && $_GET['settings-updated'] === 'true' ) {
-            echo '<div class="notice notice-success is-dismissible"><p><strong>Threshold limit saved successfully!</strong></p></div>';
-        }
-
-        // Get saved value or default 1
+        // ✅ Get data for display
         $current_threshold = get_option( 'sss_threshold_limit', 1 );
+        $excluded_cats = get_option( 'sss_excluded_categories', array() );
+
+        // ✅ Get categories for dropdown
+        $categories = get_terms( array(
+            'taxonomy' => 'product_cat',
+            'hide_empty' => false,
+        ) );
+
+        // ✅ Get last sync time (stored by cron handler)
+        $last_sync = get_option( 'sss_last_sync_time' );
         ?>
-        <div class="wrap">
-            <h1>Supplier Settings</h1>
-            <p>Set the global threshold limit used to determine when a product should show as backorder.</p>
+        <div class="wrap sss-admin-page bg-gradient-to-br from-gray-50 via-indigo-50 to-blue-50">
+            <!-- Top Bar -->
+            <div class="bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 px-8 py-6 shadow-strong">
+                <div class="max-w-7xl mx-auto">
+                    <div class="flex items-center space-x-4 animate-fade-in">
+                        <div class="bg-white/20 backdrop-blur-sm rounded-2xl p-3 shadow-lg">
+                            <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="text-3xl font-bold text-white mb-1">Supplier Stock Settings</h1>
+                            <p class="text-blue-100 text-sm">Configure synchronization rules and preferences</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-            <form method="post" action="">
-                <?php wp_nonce_field( 'sss_save_threshold', 'sss_threshold_nonce' ); ?>
+            <!-- Main Content -->
+            <div class="max-w-7xl mx-auto px-8 py-8">
 
-                <table class="form-table">
-                    <tr>
-                        <th scope="row"><label for="sss_threshold_limit">Threshold Limit</label></th>
-                        <td>
-                            <input type="number" id="sss_threshold_limit" name="sss_threshold_limit"
-                                   value="<?php echo esc_attr( $current_threshold ); ?>" min="1"
-                                   class="small-text" />
-                            <p class="description">
-                                Example: If set to <strong>2</strong>, there must be at least 2 items in supplier feed for product to show as <em>Backorder</em>.
-                            </p>
-                        </td>
-                    </tr>
-                </table>
+                <!-- Success Message -->
+                <?php if ( $settings_saved ): ?>
+                <div class="bg-gradient-to-r from-success-50 to-success-100 border-l-4 border-success-500 p-5 mb-6 rounded-xl shadow-soft animate-slide-down">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <svg class="w-6 h-6 text-success-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                        <p class="ml-3 font-semibold text-success-800">Settings saved successfully!</p>
+                    </div>
+                </div>
+                <?php endif; ?>
 
-                <p class="submit">
-                    <input type="submit" name="save_threshold" class="button-primary" value="Save Settings" />
-                </p>
-            </form>
+                <!-- Unified Settings Form -->
+                <form method="post" action="">
+                    <?php wp_nonce_field( 'sss_save_settings', 'sss_settings_nonce' ); ?>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <!-- Main Settings -->
+                        <div class="lg:col-span-2 space-y-8">
+                            <!-- Stock Threshold Section -->
+                            <div class="bg-white rounded-2xl shadow-soft border border-gray-100 p-8 animate-fade-in">
+                                <div class="flex items-center mb-6">
+                                    <div class="bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl p-3 shadow-lg mr-4">
+                                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h2 class="text-2xl font-bold text-gray-900">Stock Threshold</h2>
+                                        <p class="text-gray-500 text-sm">Define low stock trigger point</p>
+                                    </div>
+                                </div>
+
+                                <div class="bg-gradient-to-r from-primary-50 to-blue-50 rounded-xl p-5 mb-6 border border-primary-100">
+                                    <p class="text-sm text-primary-800">Set the minimum stock quantity before marking as low or out-of-stock</p>
+                                </div>
+
+                                <div class="mb-6">
+                                    <label for="sss_threshold_limit" class="block text-sm font-bold text-gray-900 mb-4">
+                                        Threshold Limit
+                                    </label>
+                                    <div class="flex items-center space-x-4">
+                                        <div class="relative">
+                                            <input type="number" id="sss_threshold_limit" name="sss_threshold_limit"
+                                                   value="<?php echo esc_attr( $current_threshold ); ?>"
+                                                   min="0"
+                                                   class="w-40 px-6 py-5 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all text-3xl font-bold text-gray-900 text-center" />
+                                        </div>
+                                        <div class="bg-gray-100 px-5 py-5 rounded-xl">
+                                            <span class="text-gray-700 font-semibold text-lg">units</span>
+                                        </div>
+                                    </div>
+                                    <div class="mt-4 bg-warning-50 rounded-lg p-4 border border-warning-100">
+                                        <div class="flex items-start">
+                                            <svg class="w-5 h-5 text-warning-600 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                                            </svg>
+                                            <p class="text-sm text-warning-800">Products with stock at or below this value will be marked as low stock</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Excluded Categories Section -->
+                            <div class="bg-white rounded-2xl shadow-soft border border-gray-100 p-8 animate-fade-in">
+                                <div class="flex items-center mb-6">
+                                    <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-3 shadow-lg mr-4">
+                                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h2 class="text-2xl font-bold text-gray-900">Excluded Categories</h2>
+                                        <p class="text-gray-500 text-sm">Control message visibility by category</p>
+                                    </div>
+                                </div>
+
+                                <div class="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-5 mb-6 border border-purple-100">
+                                    <p class="text-sm text-purple-800">Select categories where backorder/stock messages should NOT appear</p>
+                                </div>
+
+                                <div class="mb-6">
+                                    <label class="block text-sm font-bold text-gray-900 mb-4">
+                                        Select Categories to Exclude
+                                    </label>
+                                    <div class="border-2 border-gray-200 rounded-xl p-5 bg-gradient-to-br from-gray-50 to-white max-h-96 overflow-y-auto">
+                                        <?php if ( !empty( $categories ) ): ?>
+                                            <div class="space-y-3">
+                                                <?php foreach ( $categories as $cat ): ?>
+                                                    <label class="group flex items-center p-4 bg-white rounded-xl border-2 border-gray-200 hover:border-purple-400 hover:bg-gradient-to-r hover:from-purple-50 hover:to-transparent transition-all cursor-pointer shadow-sm hover:shadow-md">
+                                                        <input type="checkbox"
+                                                               name="sss_excluded_categories[]"
+                                                               value="<?php echo $cat->term_id; ?>"
+                                                               <?php checked( in_array( $cat->term_id, $excluded_cats ) ); ?>
+                                                               class="w-6 h-6 text-purple-600 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 cursor-pointer transition-all">
+                                                        <span class="ml-4 text-gray-900 font-semibold group-hover:text-purple-900 transition-colors"><?php echo esc_html( $cat->name ); ?></span>
+                                                        <span class="ml-auto bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800 text-xs font-bold px-3 py-1.5 rounded-lg"><?php echo $cat->count; ?> products</span>
+                                                    </label>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="text-center py-12">
+                                                <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+                                                </svg>
+                                                <p class="text-gray-500 font-medium">No product categories found</p>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="mt-4 bg-purple-50 rounded-lg p-4 border border-purple-100">
+                                        <div class="flex items-start">
+                                            <svg class="w-5 h-5 text-purple-600 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                                            </svg>
+                                            <p class="text-sm text-purple-800">Products in selected categories will not display backorder messages</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Unified Save Button -->
+                            <div class="bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 rounded-2xl shadow-strong p-8 animate-fade-in">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center">
+                                        <div class="bg-white/20 backdrop-blur-sm rounded-xl p-3 mr-4">
+                                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h3 class="text-xl font-bold text-white mb-1">Ready to Save?</h3>
+                                            <p class="text-blue-100 text-sm">All changes will be applied immediately</p>
+                                        </div>
+                                    </div>
+                                    <button type="submit" name="save_settings"
+                                            class="group bg-white hover:bg-gray-50 text-indigo-700 font-bold py-5 px-10 rounded-xl transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-1 flex items-center">
+                                        <svg class="w-6 h-6 mr-3 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                        </svg>
+                                        <span class="text-lg">Save All Settings</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                    <!-- Sidebar -->
+                    <div class="space-y-6">
+                        <!-- Last Sync Time -->
+                        <div class="bg-white rounded-2xl shadow-soft border border-gray-100 p-6 animate-fade-in">
+                            <div class="flex items-center mb-5">
+                                <div class="bg-gradient-to-br from-success-500 to-success-600 rounded-xl p-2.5 shadow-lg mr-3">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </div>
+                                <h3 class="text-lg font-bold text-gray-900">Last Sync</h3>
+                            </div>
+                            <?php if ( $last_sync ): ?>
+                                <div class="bg-gradient-to-br from-success-50 to-success-100 border-l-4 border-success-500 p-5 rounded-xl">
+                                    <div class="flex items-center mb-3">
+                                        <div class="w-2 h-2 bg-success-500 rounded-full animate-pulse mr-2"></div>
+                                        <p class="text-xs font-semibold text-success-700 uppercase tracking-wider">Last Successful Sync</p>
+                                    </div>
+                                    <p class="text-3xl font-bold text-success-800 mb-2"><?php echo esc_html( date( 'H:i:s', $last_sync ) ); ?></p>
+                                    <p class="text-sm text-success-700 font-medium mb-3"><?php echo esc_html( date( 'F d, Y', $last_sync ) ); ?></p>
+                                    <div class="pt-3 border-t border-success-200">
+                                        <p class="text-xs text-success-600 flex items-center">
+                                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                            </svg>
+                                            Updates automatically
+                                        </p>
+                                    </div>
+                                </div>
+                            <?php else: ?>
+                                <div class="bg-gradient-to-br from-gray-100 to-gray-200 border-l-4 border-gray-400 p-5 rounded-xl">
+                                    <div class="flex items-center">
+                                        <svg class="w-5 h-5 text-gray-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        <p class="text-gray-700 font-medium">No sync completed yet</p>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- Info Card -->
+                        <div class="bg-gradient-to-br from-primary-50 to-indigo-50 border-2 border-primary-200 rounded-2xl p-6 shadow-soft">
+                            <div class="flex items-center mb-5">
+                                <div class="bg-primary-500 rounded-xl p-2.5 shadow-lg mr-3">
+                                    <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                                    </svg>
+                                </div>
+                                <h3 class="text-lg font-bold text-primary-900">Settings Info</h3>
+                            </div>
+                            <div class="space-y-3">
+                                <div class="bg-white rounded-lg p-3 border border-primary-100">
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 mt-0.5">
+                                            <svg class="w-4 h-4 text-primary-600" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        </div>
+                                        <p class="ml-2 text-sm text-primary-900 font-medium">Threshold applies to all synced products</p>
+                                    </div>
+                                </div>
+                                <div class="bg-white rounded-lg p-3 border border-primary-100">
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 mt-0.5">
+                                            <svg class="w-4 h-4 text-primary-600" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        </div>
+                                        <p class="ml-2 text-sm text-primary-900 font-medium">Excluded categories won't show stock messages</p>
+                                    </div>
+                                </div>
+                                <div class="bg-white rounded-lg p-3 border border-primary-100">
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0 mt-0.5">
+                                            <svg class="w-4 h-4 text-primary-600" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        </div>
+                                        <p class="ml-2 text-sm text-primary-900 font-medium">Sync runs automatically every 30 minutes</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </form>
+            </div>
         </div>
         <?php
+    }
+
+    public function sss_after_sync_completed() {
+        update_option( 'sss_last_sync_time', time() );
     }
 
 }
