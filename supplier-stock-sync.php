@@ -3,7 +3,7 @@
  * Plugin Name: Supplier Stock Sync
  * Plugin URI:  https://worzen.com/products/
  * Description: Sync product & variation stock with supplier CSV feed and auto-manage backorder / out-of-stock states. Uses Action Scheduler for background processing.
- * Version:     1.4.2
+ * Version:     1.4.5
  * Author:      Al Imran Akash
  * Author URI:  https://profiles.wordpress.org/al-imran-akash/
  * Text Domain: supplier-stock-sync
@@ -168,8 +168,7 @@ class Supplier_Stock_Sync {
      * Setup cron functionality
      */
     private function setup_cron() {
-        wp_clear_scheduled_hook( SSS_Cron::ACTION_HOOK );
-
+        // Only schedule if not already scheduled (don't clear existing schedule)
         if ( ! wp_next_scheduled( SSS_Cron::ACTION_HOOK ) ) {
             wp_schedule_event( time(), 'every_30_minutes', SSS_Cron::ACTION_HOOK );
         }
@@ -179,8 +178,7 @@ class Supplier_Stock_Sync {
      * Plugin activation
      */
     public function activate() {
-        wp_clear_scheduled_hook( SSS_Cron::ACTION_HOOK );
-
+        // Schedule cron if not already scheduled
         if ( ! wp_next_scheduled( SSS_Cron::ACTION_HOOK ) ) {
             wp_schedule_event( time(), 'every_30_minutes', SSS_Cron::ACTION_HOOK );
         }
@@ -454,7 +452,8 @@ class Supplier_Stock_Sync {
         if ( ! empty( $excluded_cats ) ) {
             $product_cats = wp_get_post_terms( $product->get_id(), 'product_cat', array( 'fields' => 'ids' ) );
             if ( array_intersect( $excluded_cats, $product_cats ) ) {
-                return $availability_text; // skip replacement if product in excluded cat
+                // return $availability_text; // skip replacement if product in excluded cat
+                return ''; // skip replacement if product in excluded cat
             }
         }
 
@@ -482,11 +481,43 @@ class Supplier_Stock_Sync {
      * Display checkout backorder notice
      */
     public function display_checkout_backorder_notice() {
-        if ( $this->cart_has_backorder_items() ) {
-            echo '<div class="supplier-checkout-notice" style="background:#fff3cd;padding:15px;margin-bottom: 10px;border:1px solid #ffeaa7;border-radius:4px;font-weight:bold;">';
-            echo '<span style="color:#856404;">' . esc_html( $this->get_message( 'checkout' ) ) . '</span>';
-            echo '</div>';
+
+        // Check if cart has backorder items
+        if ( ! $this->cart_has_backorder_items() ) {
+            return;
         }
+
+        // ✅ Check for excluded categories - skip notice if cart contains excluded category products
+        $excluded_cats = get_option( 'sss_excluded_categories', array() );
+        if ( ! empty( $excluded_cats ) && function_exists( 'WC' ) && WC()->cart ) {
+            foreach ( WC()->cart->get_cart() as $cart_item ) {
+                $product = $cart_item['data'];
+                if ( $product ) {
+                    $product_cats = wp_get_post_terms( $product->get_id(), 'product_cat', array( 'fields' => 'ids' ) );
+                    // If product belongs to an excluded category, skip the checkout notice entirely
+                    if ( array_intersect( $excluded_cats, $product_cats ) ) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Display the checkout backorder notice
+        echo '<div class="supplier-checkout-notice" style="background:#fff3cd;padding:15px;margin-bottom: 10px;border:1px solid #ffeaa7;border-radius:4px;font-weight:bold;">';
+        echo '<span style="color:#856404;">' . esc_html( $this->get_message( 'checkout' ) ) . '</span>';
+        echo '</div>';
+
+        ?>
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                const parent = document.querySelector('.e-checkout__order_review-2');
+                if (parent && !parent.classList.contains('sct')) {
+                    parent.classList.add('sct');
+                }
+            });
+        </script>
+        <?php
+
     }
     
     /**
@@ -625,6 +656,12 @@ class Supplier_Stock_Sync {
         $supplier_products  = get_posts( $args );
         $next_cron          = wp_next_scheduled( SSS_Cron::ACTION_HOOK );
         $last_sync          = get_option( 'sss_last_sync_time' );
+
+        // Debug: Check if cron is properly scheduled
+        // If $next_cron is false or 0, the cron is not scheduled
+        // If $next_cron equals current time, there might be an issue
+        $current_time = time();
+        $time_until_next = $next_cron ? ( $next_cron - $current_time ) : 0;
         ?>
         <div class="wrap sss-admin-page bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50">
             <!-- Top Bar with Gradient -->
@@ -735,12 +772,45 @@ class Supplier_Stock_Sync {
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                     </svg>
                                 </div>
-                                <span class="text-xs font-semibold text-warning-600 bg-warning-50 px-3 py-1 rounded-full">SCHEDULED</span>
+                                <?php if ( $next_cron && $time_until_next > 0 ): ?>
+                                    <span class="text-xs font-semibold text-warning-600 bg-warning-50 px-3 py-1 rounded-full">
+                                        IN <?php echo ceil( $time_until_next / 60 ); ?> MIN
+                                    </span>
+                                <?php elseif ( $next_cron && $time_until_next <= 0 ): ?>
+                                    <span class="text-xs font-semibold text-success-600 bg-success-50 px-3 py-1 rounded-full">RUNNING</span>
+                                <?php else: ?>
+                                    <span class="text-xs font-semibold text-gray-600 bg-gray-50 px-3 py-1 rounded-full">NOT SET</span>
+                                <?php endif; ?>
                             </div>
                             <div>
                                 <p class="text-gray-500 text-xs font-semibold uppercase tracking-wider mb-1">Next Sync</p>
-                                <p class="text-2xl font-bold text-gray-900 mb-1"><?php echo $next_cron ? date( 'H:i:s', $next_cron ) : 'Not scheduled'; ?></p>
-                                <p class="text-sm text-gray-600"><?php echo $next_cron ? date( 'M d, Y', $next_cron ) : 'Configure cron'; ?></p>
+                                <p class="text-2xl font-bold text-gray-900 mb-1">
+                                    <?php
+                                    if ( $next_cron ) {
+                                        echo date( 'H:i:s', $next_cron );
+                                    } else {
+                                        echo 'Not scheduled';
+                                    }
+                                    ?>
+                                </p>
+                                <p class="text-sm text-gray-600">
+                                    <?php
+                                    if ( $next_cron ) {
+                                        echo date( 'M d, Y', $next_cron );
+                                        if ( $time_until_next > 0 ) {
+                                            $hours = floor( $time_until_next / 3600 );
+                                            $minutes = floor( ( $time_until_next % 3600 ) / 60 );
+                                            if ( $hours > 0 ) {
+                                                echo ' (' . $hours . 'h ' . $minutes . 'm)';
+                                            } else {
+                                                echo ' (' . $minutes . ' minutes)';
+                                            }
+                                        }
+                                    } else {
+                                        echo 'Configure cron';
+                                    }
+                                    ?>
+                                </p>
                             </div>
                         </div>
                     </div>
